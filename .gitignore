@@ -32,5 +32,8 @@ desktop/.tools/
 # GitHub Pages：不要排除 .nojekyll（它本身就是给 Pages 用的标记文件）
 !.nojekyll
 
-# Netlify 部署用的暂存目录（400MB，由 desktop/.tools/deploy.sh 生成）
+# Netlify 部署用的暂存目录（268MB，由 desktop/.tools/deploy.sh 拼装）
 .deploy/
+
+# Local Netlify folder
+.netlify
