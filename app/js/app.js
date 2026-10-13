@@ -40,6 +40,7 @@ const S = {
   cueEls: [],
   asrModels: [],       // 本机实际存在的识别模型 id
   asrModel: '',        // 当前使用的识别模型 id
+  recogLang: null,     // 现有字幕是**按哪种语言**识别出来的（切模式时用来判断要不要问「重新识别」）
   modelSwitched: false,// 用户是否手动切过模型（切过就不再做开机预热）
   settings: {
     voiceName: '', ttsRate: 0.95, fontSize: 18, autoScroll: true,
@@ -48,6 +49,8 @@ const S = {
     // 右侧两列可以分别收起。练听力时不想被英文剧透就关掉英文，
     // 只想听不想看中文就关掉中文 —— 比把译文弄模糊更干脆。
     showEn: true, showZh: true,
+    // 学习语言模式（左上角 English / Español）：决定识别模型与翻译链。
+    mode: 'en',
     // 画面烧录字幕遮罩。默认关：不改变用户已有的使用习惯。
     mask: { ...SUBMASK.MASK_DEFAULTS },
   },
@@ -181,10 +184,18 @@ async function initModelUI() {
 
 /** 识别模型决定了音频是什么语言，翻译链要跟着换（en→zh 还是 es→en→zh）。
  *  必须在装模型**之前**调用：换了语言要重建翻译线程池，
- *  否则会拿着上一轮的模型去翻这一轮的句子。 */
+ *  否则会拿着上一轮的模型去翻这一轮的句子。
+ *
+ *  另外这里是「模式」与「模型」的唯一校准点：真正决定识别语言的是模型，
+ *  所以在设置抽屉里手动换成西语模型时，左上角那个模式按钮要跟着亮过去。 */
 function applySourceLang() {
   const lang = modelLang(S.asrModel);
   MT.setLang(lang);
+  if ((lang === 'en' || lang === 'es') && S.settings.mode !== lang) {
+    S.settings.mode = lang;
+    saveSettings();
+  }
+  applyModeView();
   return lang;
 }
 
@@ -298,12 +309,12 @@ function startModelJob(id) {
 }
 
 async function switchASRModel(id) {
-  if (!id || id === S.asrModel) return;
+  if (!id || id === S.asrModel) return true;
   if (S.busy) {
     toast(t('toast.busy'));
     const sel = $('#setAsrModel');
     if (sel) sel.value = S.asrModel;
-    return;
+    return false;
   }
   S.modelSwitched = true;
   S.asrModel = id;
@@ -314,13 +325,20 @@ async function switchASRModel(id) {
   // 就该重新识别，旧译文留着反而会和新的英文对不上。
   applySourceLang();
   ASR.setModel(id);
+  // 从左上角的模式按钮切过来时，设置抽屉里那个下拉也得跟着走，
+  // 否则两个控件会各说各话（下拉还停在旧模型上）。
+  const sel = $('#setAsrModel');
+  if (sel) sel.value = id;
   updateModelNote();
   try {
     if (await startModelJob(id) === 'ok') {
       toast(t('set.asrModel.switched', { model: modelMeta(id)?.label || id }));
+      return true;
     }
+    return false;
   } catch (e) {
     toast(t('toast.recogFail', { msg: e?.message || e }), 5000);
+    return false;
   }
 }
 
@@ -401,6 +419,120 @@ function setThemePref(pref) {
 if (darkMedia) {
   const onSys = () => { if (S.themePref === 'auto') applyTheme(); };
   darkMedia.addEventListener ? darkMedia.addEventListener('change', onSys) : darkMedia.addListener(onSys);
+}
+
+/* ============================ 通用确认框 ============================ */
+
+/** 一个只问「行 / 不行」的小弹窗。返回 Promise<boolean>。 */
+function askModal({ title, body, okText, cancelText }) {
+  return new Promise((resolve) => {
+    const box = $('#askModal');
+    if (!box) { resolve(window.confirm(`${title}\n\n${body}`)); return; }   // 兜底：极端情况下也要能问出来
+    setText('askTitle', title);
+    setText('askBody', body);
+    setText('askOk', okText);
+    setText('askCancel', cancelText);
+    box.hidden = false;
+
+    const done = (v) => {
+      box.hidden = true;
+      $('#askOk').removeEventListener('click', onOk);
+      $('#askCancel').removeEventListener('click', onCancel);
+      box.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onKey);
+      resolve(v);
+    };
+    const onOk = () => done(true);
+    const onCancel = () => done(false);
+    const onBackdrop = (e) => { if (e.target === box) done(false); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') done(false);
+      else if (e.key === 'Enter') done(true);
+    };
+    $('#askOk').addEventListener('click', onOk);
+    $('#askCancel').addEventListener('click', onCancel);
+    box.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKey);
+    $('#askOk').focus();
+  });
+}
+
+/* ============================ 学习语言模式 ============================
+
+   左上角那个 English / Español 开关。它决定「识别什么语言 + 走哪条翻译链」：
+
+     en → whisper-base.en（纯英语）   → en → zh
+     es → whisper-base（多语言）      → es → en → zh
+
+   和右上角的界面语言（EN 按钮）是两件完全独立的事 —— 你可以用中文界面学西语。
+   唯一的耦合点是「模式 ↔ 识别模型的语言」始终保持同步，因为真正决定识别语言
+   的是模型：在这个开关上点一下会换模型，在设置里手动换模型也会让这里跟着亮。
+
+   ⚠️ 西语必须用多语言版模型（不带 .en）。纯英语模型喂西语音频**不会报错**，
+      只会吐出一串看起来像英语的无意义猜测 —— 这正是需要这个开关的原因。
+--------------------------------------------------------------- */
+
+/** 每个模式的默认识别模型。模型不在本机时不静默降级，直接告诉用户。 */
+const MODE_MODEL = { en: 'whisper-base.en', es: 'whisper-base' };
+
+/** 当前模式 = 当前识别模型的语言；模型还没解析出来时退回存档值。 */
+function getMode() {
+  const byModel = modelLang(S.asrModel);
+  if (S.asrModel && (byModel === 'en' || byModel === 'es')) return byModel;
+  return S.settings.mode === 'es' ? 'es' : 'en';
+}
+
+function applyModeView() {
+  const mode = getMode();
+  $$('#modeSeg button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+}
+
+/** 切到某个学习语言模式。界面语言不动。 */
+async function setMode(mode) {
+  if (mode !== 'en' && mode !== 'es') return;
+  if (mode === getMode()) return;
+
+  const want = MODE_MODEL[mode];
+  if (want && !S.asrModels.includes(want)) {
+    toast(t('mode.needModel', { model: modelMeta(want)?.label || want }), 6000);
+    applyModeView();          // 把按钮弹回真实状态，别留一个骗人的高亮
+    return;
+  }
+
+  // 已经识出来的字幕是按另一种语言跑的 → 先问一句再动手。
+  // 不问就切的话，用户会看到「模式是西语、字幕还是英语」这种看不懂的状态。
+  // 答「先不重识别」也照切模式，只是不动已有字幕。
+  const prev = getMode();
+  let redo = false;
+  if (S.cues.length && S.recogLang && S.recogLang !== mode) {
+    redo = await askModal({
+      title: t('mode.confirmTitle'),
+      body: t('mode.confirmBody', { from: t('mode.lang.' + prev), to: t('mode.lang.' + mode) }),
+      okText: t('mode.confirmYes'),
+      cancelText: t('mode.confirmNo'),
+    });
+  }
+
+  // 先落存档再换模型：applySourceLang → applyModeView 会回头读它做校准
+  S.settings.mode = mode;
+  saveSettings();
+  applyModeView();
+
+  if (want && want !== S.asrModel) {
+    const ok = await switchASRModel(want);
+    if (!ok) {
+      // 换模型被拒绝（正在识别中）或装载失败：把模式回退到真实语言，别虚标
+      S.settings.mode = getMode();
+      saveSettings();
+      applyModeView();
+      return;
+    }
+  }
+  applyModeView();
+  toast(t('mode.switched', { lang: t('mode.lang.' + mode) }));
+
+  // 换完模型再重跑：runTranscribe 要用新模型，顺序反了会拿旧模型再识别一遍
+  if (redo) runTranscribe();
 }
 
 /* ============================ 界面语言 ============================ */
@@ -505,6 +637,13 @@ function bindUI() {
     setThemePref(resolvedTheme() === 'dark' ? 'light' : 'dark');
   });
   $('#btnLang').addEventListener('click', () => setLang(nextLang(getLang())));
+
+  // 左上角的学习语言模式。它跟界面语言是两回事，所以这里不碰 setLang。
+  $('#modeSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b && b.dataset.mode) setMode(b.dataset.mode);
+  });
+  applyModeView();
   $('#themeCards').addEventListener('click', (e) => {
     const b = e.target.closest('[data-theme-opt]');
     if (b) setThemePref(b.dataset.themeOpt);
@@ -944,6 +1083,7 @@ async function openVideoFile(file) {
   S.name = file.name;
   S.file = file;
   S.cues = [];
+  S.recogLang = null;   // 新视频：还没识别过，没有「旧语言」可言
   S.activeIdx = -1;
   S.audioOnly = isAudioOnly;
   const wrap = $('#playerWrap');
@@ -1911,6 +2051,7 @@ async function runTranscribe() {
 
   S.busy = 'asr';
   S.recog = true;
+  S.recogLang = modelLang(S.asrModel);   // 记下这一轮用的是什么语言，切模式时好判断要不要问
   let needTranslate = false;
   const btn = $('#btnTranscribe');
   btn.disabled = true;

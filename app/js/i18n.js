@@ -11,9 +11,23 @@
 
 const ZH = {
   // 元信息
-  'app.title': 'EchoLingo · 回声英语｜英语视频精读',
-  'app.desc': '英语视频精读工具：自动生成双语字幕、逐词释义与发音、句子朗读与收藏，全部在本机完成。',
-  'brand.tag': '回声英语 · 视频精读',
+  'app.title': 'EchoLingo · 回声语言｜视频精读',
+  'app.desc': '视频精读工具：自动生成多语字幕、逐词释义与发音、句子朗读与收藏，全部在本机完成。',
+  'brand.tag': '回声语言 · 视频精读',
+
+  // 学习语言模式（左上角）。按钮上的 English / Español 是语言自己的名字（endonym），
+  // 三种界面语言下都保持原样，所以它们没有 data-i18n，只有 title 走字典。
+  'mode.hint': '选择要学习的语言',
+  'mode.enHint': '英语模式：识别英语，翻译成中文',
+  'mode.esHint': '西语模式：识别西班牙语，翻译成英语和中文',
+  'mode.lang.en': '英语',
+  'mode.lang.es': '西语',
+  'mode.switched': '已切到{lang}模式',
+  'mode.needModel': '本机没有 {model} 识别模型，模式没能切过去。',
+  'mode.confirmTitle': '要重新识别吗？',
+  'mode.confirmBody': '当前这个视频是按{from}识别的。切到{to}模式后要重新识别一遍吗？',
+  'mode.confirmYes': '重新识别',
+  'mode.confirmNo': '先不重识别',
 
   // 顶栏
   'top.importVideo': '导入视频',
@@ -321,9 +335,23 @@ const ZH = {
 };
 
 const EN = {
-  'app.title': 'EchoLingo · English Video Reader',
-  'app.desc': 'Read English videos closely: automatic bilingual subtitles, word-by-word definitions and pronunciation, sentence playback and bookmarking — all on your own machine.',
+  'app.title': 'EchoLingo · Video Reader',
+  'app.desc': 'Read videos closely: automatic multilingual subtitles, word-by-word definitions and pronunciation, sentence playback and bookmarking — all on your own machine.',
   'brand.tag': 'EchoLingo · Video Reader',
+
+  // Learning-language mode (top-left). The button captions themselves
+  // (English / Español) are endonyms and are never translated.
+  'mode.hint': 'Choose the language you are learning',
+  'mode.enHint': 'English mode: transcribe English, translate into Chinese',
+  'mode.esHint': 'Spanish mode: transcribe Spanish, translate into English and Chinese',
+  'mode.lang.en': 'English',
+  'mode.lang.es': 'Spanish',
+  'mode.switched': 'Switched to {lang} mode',
+  'mode.needModel': 'The {model} recognition model is not installed on this machine, so the mode could not switch.',
+  'mode.confirmTitle': 'Transcribe again?',
+  'mode.confirmBody': 'This video was transcribed as {from}. Switch to {to} mode and transcribe it again?',
+  'mode.confirmYes': 'Transcribe again',
+  'mode.confirmNo': 'Not now',
 
   'top.importVideo': 'Import video',
   'top.importSub': 'Import subtitles',
@@ -619,9 +647,23 @@ const EN = {
 
 const ES = {
   // 元信息
-  'app.title': 'EchoLingo · Lector de vídeos en inglés',
-  'app.desc': 'Lee vídeos en inglés con atención: subtítulos bilingües automáticos, definiciones y pronunciación palabra por palabra, lectura en voz alta y favoritos. Todo en tu propio ordenador.',
+  'app.title': 'EchoLingo · Lector de vídeos',
+  'app.desc': 'Lee vídeos con atención: subtítulos multilingües automáticos, definiciones y pronunciación palabra por palabra, lectura en voz alta y favoritos. Todo en tu propio ordenador.',
   'brand.tag': 'EchoLingo · Lector de vídeo',
+
+  // Modo de idioma de aprendizaje (arriba a la izquierda). Los rótulos de los
+  // botones (English / Español) son endónimos y no se traducen nunca.
+  'mode.hint': 'Elige el idioma que estás aprendiendo',
+  'mode.enHint': 'Modo inglés: transcribe inglés y traduce al chino',
+  'mode.esHint': 'Modo español: transcribe español y traduce al inglés y al chino',
+  'mode.lang.en': 'inglés',
+  'mode.lang.es': 'español',
+  'mode.switched': 'Modo {lang} activado',
+  'mode.needModel': 'El modelo de reconocimiento {model} no está instalado en este equipo, así que no se pudo cambiar de modo.',
+  'mode.confirmTitle': '¿Volver a transcribir?',
+  'mode.confirmBody': 'Este vídeo se transcribió como {from}. ¿Cambiar a modo {to} y transcribirlo otra vez?',
+  'mode.confirmYes': 'Volver a transcribir',
+  'mode.confirmNo': 'Ahora no',
 
   // 顶栏
   'top.importVideo': 'Importar vídeo',

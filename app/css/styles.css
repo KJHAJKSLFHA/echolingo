@@ -122,7 +122,12 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; }
   gap: 16px; padding: 10px 16px;
   background: var(--panel); border-bottom: 1px solid var(--line);
   flex: 0 0 auto; z-index: 20;
+  /* 顶栏元素在窄窗口可能排不下：允许换行，否则会顶出横向滚动条 */
+  flex-wrap: wrap; row-gap: 8px;
 }
+/* 左侧一组：品牌标识 + 学习语言模式。两者必须黏在一起，
+   否则 .topbar 的 space-between 会把模式按钮推到屏幕中间。 */
+.topbar-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .brand-mark {
   width: 34px; height: 34px; border-radius: 9px; flex: 0 0 auto;
@@ -290,6 +295,11 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; }
   cursor: pointer; font-size: 12.5px; font-weight: 500; color: var(--text-2);
 }
 .seg button.active { background: var(--panel); color: var(--text); box-shadow: var(--shadow-1); }
+
+/* 顶栏里的「学习语言」切换。.seg 默认 align-self: flex-start（为右侧面板设计的），
+   放进顶栏要改成居中，并稍微收窄一点，免得把导入按钮挤走。 */
+.seg-mode { align-self: center; flex: 0 0 auto; }
+.seg-mode button { padding: 4px 11px; font-size: 12px; }
 
 /* 字幕条目 */
 .cue {
@@ -505,11 +515,15 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; }
   .stage { min-height: 62vh; }
   .reader { flex: 1 1 auto; max-height: 74vh; }
   .brand-text span { display: none; }
+  .topbar-left { gap: 10px; }
 }
 @media (max-width: 640px) {
   .topbar { padding: 8px 10px; }
   .btn > span:not(.pill) { display: none; }
   .btn.btn-lang > span { display: inline; }
+  /* 模式按钮是这首屏上唯一能说明「在学什么语言」的东西，绝不隐藏，只收窄 */
+  .topbar-left { gap: 8px; }
+  .seg-mode button { padding: 4px 8px; font-size: 11.5px; }
   .workspace { padding: 8px; gap: 8px; }
   .drawer { width: 100%; }
 }
@@ -614,3 +628,24 @@ body.dragover::after {
 .reader.collapsed { flex: 0 0 26px; max-width: 26px; min-width: 26px; padding-left: 0; }
 .reader.collapsed > *:not(.reader-rail) { display: none; }
 .reader.collapsed .reader-rail { border-right: 0; }
+
+/* ============================ 通用确认框 ============================
+   目前只有一个用途：切换学习语言模式时问一句「要不要重新识别」。
+   不能用 toast —— toast 会自己消失，而这个选择必须由用户明确拍板，
+   否则「模式换了、字幕还是旧语言」会变成一个看不懂的状态。
+========================================================================= */
+
+.modal {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px; background: rgba(12, 14, 18, .46);
+}
+.modal-card {
+  width: min(430px, 100%);
+  background: var(--panel); border: 1px solid var(--line-strong);
+  border-radius: var(--radius); padding: 20px 20px 16px;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, .34);
+}
+.modal-card h3 { font-size: 15.5px; margin-bottom: 8px; }
+.modal-card p { font-size: 13.5px; line-height: 1.65; color: var(--text-2); }
+.modal-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }

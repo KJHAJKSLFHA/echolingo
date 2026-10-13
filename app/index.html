@@ -35,11 +35,21 @@ window.__ECHOLINGO_VER__ = '3.9.0';
 
   <!-- ============ 顶栏 ============ -->
   <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark">EL</div>
-      <div class="brand-text">
-        <strong>EchoLingo</strong>
-        <span data-i18n="brand.tag">回声英语 · 视频精读</span>
+    <div class="topbar-left">
+      <div class="brand">
+        <div class="brand-mark">EL</div>
+        <div class="brand-text">
+          <strong>EchoLingo</strong>
+          <span data-i18n="brand.tag">回声语言 · 视频精读</span>
+        </div>
+      </div>
+
+      <!-- 学习语言模式：决定「识别什么语言 + 走哪条翻译链」。
+           和右上角的界面语言（EN 按钮）是两件互不影响的事 —— 你可以用中文界面学西语。
+           按钮上写的是语言自己的名字（endonym），三种界面语言下都不翻译。 -->
+      <div class="seg seg-mode" id="modeSeg" data-i18n-title="mode.hint" title="选择要学习的语言">
+        <button data-mode="en" class="active" data-i18n-title="mode.enHint" title="英语模式：识别英语，翻译成中文">English</button>
+        <button data-mode="es" data-i18n-title="mode.esHint" title="西语模式：识别西班牙语，翻译成英语和中文">Español</button>
       </div>
     </div>
 
@@ -183,6 +193,18 @@ window.__ECHOLINGO_VER__ = '3.9.0';
       </div>
     </aside>
   </main>
+
+  <!-- ============ 通用确认框（切学习语言模式时用） ============ -->
+  <div class="modal" id="askModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="askTitle">
+      <h3 id="askTitle"></h3>
+      <p id="askBody"></p>
+      <div class="modal-btns">
+        <button class="btn" id="askCancel"></button>
+        <button class="btn btn-primary" id="askOk"></button>
+      </div>
+    </div>
+  </div>
 
   <!-- ============ 单词卡片 ============ -->
   <div class="wordcard" id="wordcard" hidden>
