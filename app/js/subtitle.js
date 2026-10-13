@@ -113,6 +113,8 @@ function decorate(cues) {
       start: c.start,
       end: c.end,
       text: en || c.text.replace(/\n/g, ' '),
+      // 中间那行：源语言不是英语时才有值（西语模式 = 西语原文的英文翻译）
+      mid: '',
       zh: zh || '',
       raw: c.text,
       noAudio: !!c.noAudio,
@@ -217,8 +219,9 @@ export function mergeCues(cues, maxGap = 0.5) {
   for (const c of cues) {
     const prev = out[out.length - 1];
     if (prev && c.start - prev.end < maxGap && !/[.!?…]$/.test(prev.text.trim()) &&
-        (prev.text.length + c.text.length) < 220 && (!prev.zh || !c.zh)) {
+        (prev.text.length + c.text.length) < 220 && (!prev.zh || !c.zh) && (!prev.mid || !c.mid)) {
       prev.text = (prev.text + ' ' + c.text).replace(/\s+/g, ' ').trim();
+      prev.mid = (prev.mid || '') + (c.mid || '');
       prev.zh = (prev.zh || '') + (c.zh || '');
       prev.end = c.end;
     } else {
@@ -235,6 +238,6 @@ export function toSRT(cues) {
     return `${pad(Math.floor(t / 3600))}:${pad(Math.floor(t / 60) % 60)}:${pad(Math.floor(t) % 60)},${pad(ms, 3)}`;
   };
   return cues.map((c, i) =>
-    `${i + 1}\n${ts(c.start)} --> ${ts(c.end)}\n${c.text}${c.zh ? '\n' + c.zh : ''}\n`
+    `${i + 1}\n${ts(c.start)} --> ${ts(c.end)}\n${c.text}${c.mid ? '\n' + c.mid : ''}${c.zh ? '\n' + c.zh : ''}\n`
   ).join('\n');
 }

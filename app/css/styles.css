@@ -225,6 +225,7 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; }
   text-transform: uppercase; font-variant-numeric: tabular-nums;
 }
 .bs-en { font-family: Georgia, "Times New Roman", serif; font-size: 25px; line-height: 1.52; color: var(--text); }
+.bs-mid { font-size: 18px; line-height: 1.6; color: var(--text-2); margin-top: 4px; }
 .bs-zh { font-size: 16px; line-height: 1.65; color: var(--text-2); }
 .bs-empty { color: var(--text-3); }
 .bs-en .w { cursor: pointer; }
@@ -322,6 +323,8 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; }
 .cue-actions button:hover { background: var(--hover-2); color: var(--text); }
 .cue-actions button.on { color: var(--warn); }
 .cue-en { font-size: var(--sub-font); line-height: 1.62; color: var(--text); font-family: Georgia, "Times New Roman", serif; }
+.cue-mid { font-size: calc(var(--sub-font) - 2px); line-height: 1.62; color: var(--text-2); margin-top: 3px; font-family: Georgia, "Times New Roman", serif; }
+.cue-mid.pending { color: var(--text-3); font-style: italic; font-family: inherit; }
 .cue-zh { font-size: calc(var(--sub-font) - 3.5px); line-height: 1.62; color: var(--text-2); margin-top: 3px; }
 .cue-zh.pending { color: var(--text-3); font-style: italic; }
 .cue-zh.none { display: none; }
@@ -591,9 +594,15 @@ body.dragover::after {
 .rh-row .seg { align-self: center; }
 
 #subs.hide-en .cue-en { display: none; }
+#subs.hide-mid .cue-mid { display: none; }
 #subs.hide-zh .cue-zh { display: none; }
 .bigscreen.hide-en .bs-en { display: none; }
+.bigscreen.hide-mid .bs-mid { display: none; }
 .bigscreen.hide-zh .bs-zh { display: none; }
+
+/* 英语模式下没有「中间那行」，按钮整个藏掉。.seg button 有自己的 display，
+   hidden 属性会被它盖过去，所以要显式写一条。 */
+#langSeg button[hidden] { display: none; }
 
 /* 两种都关掉时，右侧只剩时间码和按钮 —— 提醒一下这是有意为之，不是坏了 */
 #subs.bare .cue { padding-top: 7px; padding-bottom: 7px; }

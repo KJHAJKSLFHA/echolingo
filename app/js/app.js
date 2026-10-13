@@ -48,7 +48,8 @@ const S = {
     karaoke: true, asrModel: '',
     // 右侧两列可以分别收起。练听力时不想被英文剧透就关掉英文，
     // 只想听不想看中文就关掉中文 —— 比把译文弄模糊更干脆。
-    showEn: true, showZh: true,
+    // showMid 是西语模式多出来的「英文翻译」那一行，英语模式下没有这一行。
+    showEn: true, showMid: true, showZh: true,
     // 学习语言模式（左上角 English / Español）：决定识别模型与翻译链。
     mode: 'en',
     // 画面烧录字幕遮罩。默认关：不改变用户已有的使用习惯。
@@ -96,7 +97,7 @@ async function boot() {
   window.addEventListener('offline', updateNetStatus);
   startTick();
   setupLangUI();
-  onLangChange(() => { setupLangUI(); renderModelOptions(); renderStatus(); rerenderAll(); });
+  onLangChange(() => { setupLangUI(); renderModelOptions(); renderStatus(); rerenderAll(); applyLangView(); });
 
   // 空闲时把模型读进内存，这样「导入视频即出字幕」不用再等模型冷启动
   if (S.settings.autoRun) setTimeout(preloadModels, 1200);
@@ -485,6 +486,9 @@ function getMode() {
 function applyModeView() {
   const mode = getMode();
   $$('#modeSeg button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+  // 字幕面板那三个语言按钮跟着走：西语模式要多一个「英文翻译」的开关，
+  // 原文按钮的标签也从「英文」变成「西语」。
+  applyLangView();
 }
 
 /** 切到某个学习语言模式。界面语言不动。 */
@@ -1324,34 +1328,69 @@ function updateKaraoke(time) {
    已经渲染出来的 DOM（点一下立刻生效，不用等重排）。
 ---------------------------------------------------------- */
 
+/** 字幕里有没有「中间那行」（西语模式多出来的英文翻译）。
+
+    判断依据带上「字幕自己有没有 mid」，而不是只看当前模式：用户答「先不重识别」
+    的时候，模式已经切到英语、字幕却还是西语那套，那时中间那行还在（也还有用），
+    开关就得留着 —— 否则就会出现「看得见英文翻译、却没有按钮关掉它」。
+    反过来一旦按英语重新识别过，cue 里没有 mid 了，开关自然消失。 */
+function subHasMidLine() {
+  return getMode() === 'es' || S.cues.some((c) => c.mid);
+}
+
 function toggleLang(which) {
-  const key = which === 'en' ? 'showEn' : 'showZh';
-  S.settings[key] = S.settings[key] === false;   // 默认是 true，取反
+  if (which === 'mid') {
+    // 英语模式没有中间那一行。按钮那时是藏起来的，这里再兜一道。
+    if (!subHasMidLine()) return;
+    S.settings.showMid = S.settings.showMid === false;   // 默认是 true，取反
+  } else {
+    const key = which === 'en' ? 'showEn' : 'showZh';
+    S.settings[key] = S.settings[key] === false;   // 默认是 true，取反
+  }
   applyLangView();
+  saveSettings();
 }
 
 function applyLangView() {
-  const en = S.settings.showEn !== false;
-  const zh = S.settings.showZh !== false;
+  const srcEs = subHasMidLine();
+  const en = S.settings.showEn !== false;                        // 原文那一行
+  const mid = srcEs && S.settings.showMid !== false;             // 西语模式：英文翻译
+  const zh = S.settings.showZh !== false;                        // 中文
 
   const subs = $('#subs');
   if (subs) {
     subs.classList.toggle('hide-en', !en);
+    subs.classList.toggle('hide-mid', !mid);
     subs.classList.toggle('hide-zh', !zh);
-    subs.classList.toggle('bare', !en && !zh);
+    subs.classList.toggle('bare', !en && !mid && !zh);
   }
   const big = $('#bigScreen');
   if (big) {
     big.classList.toggle('hide-en', !en);
+    big.classList.toggle('hide-mid', !mid);
     big.classList.toggle('hide-zh', !zh);
   }
+
+  // 原文那个按钮的标签跟着识别语言走：英语模式叫「英文」，西语模式叫「西语」。
+  // 它没有 data-i18n（写死会被 applyI18n 覆盖成「英文」），所以这里连界面语言
+  // 变化的时候也要重新写一遍 —— 所以 applyLangView 挂在 onLangChange 上。
+  const srcBtn = $('#langSeg button[data-lang="en"]');
+  if (srcBtn) {
+    srcBtn.textContent = t(srcEs ? 'lang.es' : 'lang.en');
+    srcBtn.title = t(srcEs ? 'lang.esHint' : 'lang.enHint');
+  }
+  const midBtn = $('#langSeg button[data-lang="mid"]');
+  if (midBtn) midBtn.hidden = !srcEs;
+
   $$('#langSeg button').forEach((b) => {
-    b.classList.toggle('active', b.dataset.lang === 'en' ? en : zh);
+    const on = b.dataset.lang === 'mid' ? mid : (b.dataset.lang === 'zh' ? zh : en);
+    b.classList.toggle('active', on);
   });
   const hint = $('#bareHint');
-  if (hint) hint.hidden = en || zh;
-
-  saveSettings();
+  if (hint) hint.hidden = en || mid || zh;
+  // ⚠️ 这里**不**写存档：applyLangView 挂在 renderSubs 上（字幕一重排就跟着刷），
+  //    识别过程中每 500ms 存一次 localStorage 是白费力气。谁改了设置谁自己存 ——
+  //    见 toggleLang 末尾的 saveSettings()。
 }
 
 /* ---------------- 收起 / 展开整个右侧面板 ----------------
@@ -1406,6 +1445,10 @@ function setCues(cues, { translate = true } = {}) {
 }
 
 function renderSubs(filter = '') {
+  // 字幕内容一变，「有没有中间那行」就可能跟着变（识别完 / 重新识别完 /
+  // 切完模式把 cue 换掉），那一栏开关的标签和显隐得在同一帧校准。
+  // 只动 class 与 textContent，不重排 DOM，放在这里当副作用是安全的。
+  applyLangView();
   const box = $('#subs');
   const scrollTop = box.scrollTop;
   box.innerHTML = '';
@@ -1467,6 +1510,13 @@ function wordSpansHTML(text) {
 
 function cueInnerHTML(c) {
   const en = wordSpansHTML(c.text);
+  // 中间那行只在源语言不是英语时才有（西语模式 = 西语原文的英文翻译）。
+  // 英语模式下 c.mid 恒为空，这里就什么都不加 —— 版面跟以前完全一样。
+  const midHTML = c.mid
+    ? `<div class="cue-mid">${escapeHtml(c.mid)}</div>`
+    : (S.busy === 'mt' && c._pendingMid
+      ? `<div class="cue-mid pending">${escapeHtml(t('cue.translating'))}</div>`
+      : '');
   const zh = c.zh
     ? `<div class="cue-zh">${escapeHtml(c.zh)}</div>`
     : (S.busy === 'mt' || c._pending
@@ -1479,7 +1529,7 @@ function cueInnerHTML(c) {
     `<button data-act="fav" data-i18n-title="cue.fav" title="${escapeHtml(t('cue.fav'))}">${S.favSentences.has(sentId(c)) ? escapeHtml(t('cue.saved')) : escapeHtml(t('cue.fav'))}</button>` +
     `<button data-act="copy" data-i18n-title="cue.copy" title="${escapeHtml(t('cue.copy'))}">${escapeHtml(t('cue.copy'))}</button>` +
     `</span></div>` +
-    `<div class="cue-en">${en}</div>${zh}`;
+    `<div class="cue-en">${en}</div>${midHTML}${zh}`;
 }
 
 function setActive(idx, scroll) {
@@ -1511,11 +1561,13 @@ function renderBigScreen() {
   if (!cue) {
     setText('bsTag', t('bs.tag'));
     $('#bsEn').innerHTML = `<span class="bs-empty">${escapeHtml(t('bs.placeholder'))}</span>`;
+    $('#bsMid').textContent = '';
     $('#bsZh').textContent = '';
     return;
   }
   setText('bsTag', `${t('bs.tag')} · ${fmtTime(cue.start)}`);
   $('#bsEn').innerHTML = wordSpansHTML(cue.text);
+  $('#bsMid').textContent = cue.mid || '';
   $('#bsZh').textContent = cue.zh || t('bs.noZh');
 }
 
@@ -1534,7 +1586,7 @@ function onSubsClick(e) {
     else if (act === 'play') playCueAudio(idx);
     else if (act === 'fav') { toggleFavSentence(cue); renderSubs($('#subSearch').value.trim()); setActive(idx, false); }
     else if (act === 'copy') {
-      navigator.clipboard?.writeText(cue.text + (cue.zh ? '\n' + cue.zh : ''))
+      navigator.clipboard?.writeText([cue.text, cue.mid, cue.zh].filter(Boolean).join('\n'))
         .then(() => toast(t('cue.copyDone'))).catch(() => toast(t('cue.copyFail')));
     }
     return;
@@ -2151,48 +2203,60 @@ async function translateAll({ force = false, retry = false } = {}) {
   }
   if (!force && S.settings.transMode === 'off') return;
   if (!S.cues.length) return;
-  const pending = S.cues.filter((c) => !c.zh);
-  if (!pending.length) return;
 
-  pending.forEach((c) => { c._pending = true; });
-  renderSubs($('#subSearch').value.trim());
-  if (S.activeIdx >= 0) setActive(S.activeIdx, false);
+  // 源语言就是识别模型的语言。整条链只跑一趟，链上每一跳的输出都留下来：
+  //   西语原文 --(opus-mt-es-en)--> 英文（存 c.mid）--(opus-mt-en-zh)--> 中文（存 c.zh）
+  // 英语模式链只有一跳：英文原文 --(opus-mt-en-zh)--> 中文，mid 天然为空字符串。
+  // ⚠️ 早先这里分两趟跑（先 es→en 填 mid，再拿 mid 跑 en→zh 填 zh）。两个毛病：
+  //    ① 等于把链跑两遍，时间翻倍；② 第二趟拿到的其实是第一趟的**最终**输出，
+  //    于是「英文翻译」那一行被填成了中文。现在由 MT 一趟带回 out + mid。
+  const src = modelLang(S.asrModel);
+  const wantMid = src !== 'en';
+
+  const todo = S.cues.filter((c) => !c.zh || (wantMid && !c.mid));
+  if (!todo.length) return;
+  todo.forEach((c) => { c._pending = true; c._pendingMid = wantMid; });
+
+  const refresh = () => {
+    renderSubs($('#subSearch').value.trim());
+    if (S.activeIdx >= 0) setActive(S.activeIdx, false);
+  };
+  refresh();
 
   S.busy = 'mt';
   dot('dotMt', 'busy');
   const ctrl = new AbortController();
   S.transAbort = ctrl;
 
+  const onProgress = (p) => {
+    if (p.phase === 'load') {
+      showProgress(p.pct ?? 0, p.file
+        ? t(hasCached(LS_MT_CACHED) ? 'prog.loadMtFile' : 'prog.loadMtFileFirst', { file: shortFile(p.file) })
+        : t('prog.loadMt'));
+    } else {
+      showProgress(p.pct, t(wantMid ? 'prog.translatingMid' : 'prog.translating', { done: p.done, total: p.total }));
+      // 每若干句刷新一次，让用户看到译文逐步出现
+      if (p.done % 8 === 0) refresh();
+    }
+  };
+
   try {
     showProgress(0, t('prog.loadMt'));
-    await MT.translateMany(pending.map((c) => c.text), {
-      signal: ctrl.signal,
-      // 显式带上源语言：翻译链是按语言选的，依赖「之前调用过 setLang」
-      // 太脆 —— 万一顺序变了就会拿英语链去翻西语，而且不报错、只是译文很怪。
-      from: modelLang(S.asrModel),
-      onProgress: (p) => {
-        if (p.phase === 'load') {
-          showProgress(p.pct ?? 0, p.file
-            ? t(hasCached(LS_MT_CACHED) ? 'prog.loadMtFile' : 'prog.loadMtFileFirst', { file: shortFile(p.file) })
-            : t('prog.loadMt'));
-        } else {
-          showProgress(p.pct, t('prog.translating', { done: p.done, total: p.total }));
-          // 每若干句刷新一次，让用户看到译文逐步出现
-          if (p.done % 8 === 0) {
-            renderSubs($('#subSearch').value.trim());
-            if (S.activeIdx >= 0) setActive(S.activeIdx, false);
-          }
-        }
-      },
-    }).then((results) => {
-      markCached(LS_MT_CACHED);   // 走完一轮就说明模型已在缓存里了
-      pending.forEach((c, i) => {
-        if (results[i]) c.zh = results[i];
-        c._pending = false;
-      });
+    // 显式带上源语言：翻译链是按语言选的，依赖「之前调用过 setLang」
+    // 太脆 —— 万一顺序变了就会拿英语链去翻西语，而且不报错、只是译文很怪。
+    const results = await MT.translateMany(todo.map((c) => c.text), {
+      signal: ctrl.signal, from: src, onProgress,
     });
-    renderSubs($('#subSearch').value.trim());
-    if (S.activeIdx >= 0) setActive(S.activeIdx, false);
+    markCached(LS_MT_CACHED);   // 走完一轮就说明模型已在缓存里了
+    todo.forEach((c, i) => {
+      const r = results[i] || {};
+      if (wantMid) c.mid = r.mid || '';
+      if (r.out) c.zh = r.out;
+      c._pending = false;
+      c._pendingMid = false;
+    });
+
+    refresh();
     hideProgress();
     toast(t('toast.transDone'));
   } catch (e) {
@@ -2202,7 +2266,7 @@ async function translateAll({ force = false, retry = false } = {}) {
   } finally {
     S.busy = null;
     S.transAbort = null;
-    S.cues.forEach((c) => { c._pending = false; });
+    S.cues.forEach((c) => { c._pending = false; c._pendingMid = false; });
     dot('dotMt', 'ok');
     renderStatus();
   }

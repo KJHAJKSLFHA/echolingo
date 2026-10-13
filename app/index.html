@@ -140,6 +140,7 @@ window.__ECHOLINGO_VER__ = '3.9.0';
       <div class="bigscreen" id="bigScreen" hidden>
         <div class="bs-tag" id="bsTag" data-i18n="bs.tag">当前句</div>
         <div class="bs-en" id="bsEn"></div>
+        <div class="bs-mid" id="bsMid"></div>
         <div class="bs-zh" id="bsZh"></div>
       </div>
 
@@ -166,8 +167,11 @@ window.__ECHOLINGO_VER__ = '3.9.0';
             <button data-view="all" class="active" data-i18n="view.all">全文</button>
             <button data-view="focus" data-i18n="view.focus">精听</button>
           </div>
-          <div class="seg" id="langSeg" data-i18n-title="lang.hint" title="分别显示 / 隐藏右侧的英文和中文">
-            <button data-lang="en" class="active" data-i18n-title="lang.enHint" title="显示 / 隐藏英文（E）" data-i18n="lang.en">英文</button>
+          <!-- 原文那一栏的标签跟着识别语言变（英语模式「英文」/ 西语模式「西语」），
+               所以不给它 data-i18n，交给 app.js 的 applyLangView() 写。 -->
+          <div class="seg" id="langSeg" data-i18n-title="lang.hint" title="分别显示 / 隐藏字幕的三种语言">
+            <button data-lang="en" class="active" title="显示 / 隐藏原文（E）">英文</button>
+            <button data-lang="mid" class="active" hidden data-i18n-title="lang.midHint" title="显示 / 隐藏英文翻译（西语模式）" data-i18n="lang.en">英文</button>
             <button data-lang="zh" class="active" data-i18n-title="lang.zhHint" title="显示 / 隐藏中文（C）" data-i18n="lang.zh">中文</button>
           </div>
         </div>

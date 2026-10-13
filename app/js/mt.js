@@ -190,7 +190,8 @@ function askWorker(w, task, text, maxNew) {
     const onMsg = (ev) => {
       const m = ev.data || {};
       if (m.task !== task) return;
-      if (m.type === 'done') { off(); resolve(m.text || ''); }
+      // 链长 > 1 时 worker 会一并带回第一跳的结果（mid），见 mt-worker.js
+      if (m.type === 'done') { off(); resolve({ out: m.text || '', mid: m.mid || '' }); }
       else if (m.type === 'error') { off(); reject(new Error(m.message || '翻译失败')); }
     };
     const off = () => { clearTimeout(timer); w.removeEventListener('message', onMsg); };
@@ -200,7 +201,9 @@ function askWorker(w, task, text, maxNew) {
 }
 
 async function translateParallel(texts, { onProgress, signal }) {
-  const out = new Array(texts.length).fill('');
+  // 每一项是 { out, mid }：out 是整条链的最终输出，mid 是第一跳的输出
+  // （英语链为空字符串）。西语模式正好拿 mid 当「英文翻译」那一行。
+  const out = new Array(texts.length).fill(null);
   const queue = [];
   for (let i = 0; i < texts.length; i++) {
     if (clip(texts[i])) queue.push({ i, text: texts[i] });
@@ -214,9 +217,10 @@ async function translateParallel(texts, { onProgress, signal }) {
       // 目标长度随源句长度浮动：长句给足空间，短句不给模型放飞的机会
       const maxNew = Math.max(24, Math.min(200, Math.round(18 + input.length * 1.1)));
       try {
-        out[job.i] = tidy(await askWorker(w, job.i, input, maxNew));
+        const r = await askWorker(w, job.i, input, maxNew);
+        out[job.i] = { out: tidy(r.out), mid: tidy(r.mid) };
       } catch (e) {
-        out[job.i] = '';
+        out[job.i] = { out: '', mid: '' };
       }
       done++;
       onProgress?.({ phase: 'translate', pct: (done / Math.max(1, texts.length)) * 100, done, total: texts.length });
@@ -260,22 +264,24 @@ async function mainPipeline() {
 
 async function translateSerial(texts, { onProgress, signal }) {
   const chain = await mainPipeline();
-  const out = new Array(texts.length).fill('');
+  const out = new Array(texts.length).fill(null);
   for (let i = 0; i < texts.length; i++) {
     if (signal?.aborted) break;
     const input = clip(texts[i]);
-    if (!input) { out[i] = ''; continue; }
+    if (!input) { out[i] = { out: '', mid: '' }; continue; }
     const maxNew = Math.max(24, Math.min(200, Math.round(18 + input.length * 1.1)));
     try {
       let text = input;
-      for (const t of chain) {
-        const r = await t(text, { max_new_tokens: maxNew });
+      let mid = '';
+      for (let k = 0; k < chain.length; k++) {
+        const r = await chain[k](text, { max_new_tokens: maxNew });
         text = (Array.isArray(r) ? r[0] : r)?.translation_text || '';
         if (!text) break;
+        if (k === 0 && chain.length > 1) mid = text;
       }
-      out[i] = tidy(text);
+      out[i] = { out: tidy(text), mid: tidy(mid) };
     } catch (err) {
-      out[i] = '';
+      out[i] = { out: '', mid: '' };
     }
     onProgress?.({ phase: 'translate', pct: ((i + 1) / Math.max(1, texts.length)) * 100, done: i + 1, total: texts.length });
     // 每句之间让出主线程，界面保持可交互
@@ -290,9 +296,19 @@ export function isMTReady() { return workers.length > 0 || mainTranslators.lengt
 
 /**
  * 逐句翻译。句子之间彼此独立，所以并行分发到多个线程。
+ *
+ * 整条链只跑**一趟**，链上每一跳的结果都留着：西语链
+ * （es→en→zh）返回的 mid 是英文、out 是中文，调用方一次就能拿到两行字。
+ * 早先这里分两趟（先单跑 es→en 翻出英文，再拿英文跑 en→zh 翻中文），
+ * 等于把链跑两遍、慢一倍；而且第二趟喂的是第一趟的**最终**输出，
+ * 英文那一行会直接填成中文。
+ *
  * @param {string[]} texts
  * @param {{onProgress?:Function, signal?:AbortSignal, from?:string}} o
  *        from: 源语言（'en' | 'es'），由识别模型决定；不传沿用上一次。
+ * @returns {Promise<Array<{out:string, mid:string}>>}
+ *        out: 整条链的最终译文（永远是中文）；mid: 第一跳的译文
+ *        （英语链为 ''，西语链为英文）。
  */
 export async function translateMany(texts, { onProgress, signal, from } = {}) {
   if (from) setLang(from);

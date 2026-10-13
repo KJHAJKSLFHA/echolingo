@@ -70,13 +70,17 @@ self.onmessage = async (e) => {
 
     if (m.type === 'translate') {
       let text = m.text;
+      let mid = '';            // 链的第一跳输出（西语链里就是 es→en 的英文）
       // 逐级套：每一级的输出喂给下一级
-      for (const t of translators) {
-        const r = await t(text, { max_new_tokens: m.maxNew });
+      for (let i = 0; i < translators.length; i++) {
+        const r = await translators[i](text, { max_new_tokens: m.maxNew });
         text = (Array.isArray(r) ? r[0] : r)?.translation_text || '';
         if (!text) break;      // 某一级吐空了就别再往下传，免得产出垃圾
+        // 中间那一跳要交给界面当「英文翻译」用。链长只有一跳时（英语模式）
+        // 第一跳的输出就是中文，不能当英文用，所以判一下长度。
+        if (i === 0 && translators.length > 1) mid = text;
       }
-      self.postMessage({ type: 'done', task: m.task, text });
+      self.postMessage({ type: 'done', task: m.task, text, mid });
     }
   } catch (err) {
     self.postMessage({ type: 'error', task: m.task, message: String(err?.message || err) });

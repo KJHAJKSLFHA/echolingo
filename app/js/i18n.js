@@ -86,11 +86,14 @@ const ZH = {
   'chk.markWords': '标记生词',
   'chk.autoScroll': '自动滚动',
   'lang.en': '英文',
+  'lang.es': '西语',
   'lang.zh': '中文',
-  'lang.hint': '分别显示 / 隐藏右侧的英文和中文',
-  'lang.enHint': '显示 / 隐藏英文（快捷键 E）',
+  'lang.hint': '分别显示 / 隐藏字幕的三种语言',
+  'lang.enHint': '显示 / 隐藏英文原文（快捷键 E）',
+  'lang.esHint': '显示 / 隐藏西语原文（快捷键 E）',
+  'lang.midHint': '显示 / 隐藏英文翻译（西语模式）',
   'lang.zhHint': '显示 / 隐藏中文（快捷键 C）',
-  'lang.bare': '英文和中文都关掉了，现在只显示时间码。按 E 或 C 随时打开。',
+  'lang.bare': '字幕全关掉了，现在只显示时间码。按 E 或 C 随时打开。',
   'reader.collapse': '收起',
   'reader.open': '打开',
   'reader.collapseHint': '收起字幕面板（快捷键 H）',
@@ -332,6 +335,7 @@ const ZH = {
   'prog.eta': '（约剩 {n} 段）',
   'prog.etaTime': '· 约剩 {t}',
   'prog.translating': '翻译 {done}/{total} 句',
+  'prog.translatingMid': '西语 → 英语 → 中文 {done}/{total} 句',
 };
 
 const EN = {
@@ -404,11 +408,14 @@ const EN = {
   'chk.markWords': 'Mark new words',
   'chk.autoScroll': 'Auto scroll',
   'lang.en': 'EN',
+  'lang.es': 'ES',
   'lang.zh': '中文',
-  'lang.hint': 'Show or hide the English and Chinese columns separately',
-  'lang.enHint': 'Show / hide the English (shortcut: E)',
+  'lang.hint': 'Show or hide each of the three subtitle languages separately',
+  'lang.enHint': 'Show / hide the English source (shortcut: E)',
+  'lang.esHint': 'Show / hide the Spanish source (shortcut: E)',
+  'lang.midHint': 'Show / hide the English translation (Spanish mode)',
   'lang.zhHint': 'Show / hide the Chinese (shortcut: C)',
-  'lang.bare': 'English and Chinese are both hidden — only time codes are shown. Press E or C to bring them back.',
+  'lang.bare': 'All subtitle languages are hidden — only time codes are shown. Press E or C to bring them back.',
   'reader.collapse': 'Hide',
   'reader.open': 'Subtitles',
   'reader.collapseHint': 'Collapse the subtitle panel (shortcut: H)',
@@ -643,6 +650,7 @@ const EN = {
   'prog.eta': '({n} left)',
   'prog.etaTime': '· about {t} left',
   'prog.translating': 'Translating {done}/{total}',
+  'prog.translatingMid': 'Spanish → English → Chinese {done}/{total}',
 };
 
 const ES = {
@@ -722,11 +730,14 @@ const ES = {
   'chk.markWords': 'Marcar palabras nuevas',
   'chk.autoScroll': 'Desplazamiento automático',
   'lang.en': 'Inglés',
+  'lang.es': 'Español',
   'lang.zh': 'Chino',
-  'lang.hint': 'Mostrar u ocultar por separado el inglés y el chino',
-  'lang.enHint': 'Mostrar u ocultar el inglés (tecla E)',
+  'lang.hint': 'Mostrar u ocultar por separado cada uno de los tres idiomas',
+  'lang.enHint': 'Mostrar u ocultar el inglés original (tecla E)',
+  'lang.esHint': 'Mostrar u ocultar el español original (tecla E)',
+  'lang.midHint': 'Mostrar u ocultar la traducción al inglés (modo español)',
   'lang.zhHint': 'Mostrar u ocultar el chino (tecla C)',
-  'lang.bare': 'El inglés y el chino están ocultos: solo se ven los tiempos. Pulsa E o C para volver a mostrarlos.',
+  'lang.bare': 'Todos los idiomas están ocultos: solo se ven los tiempos. Pulsa E o C para volver a mostrarlos.',
   'reader.collapse': 'Ocultar',
   'reader.open': 'Abrir',
   'reader.collapseHint': 'Ocultar el panel de subtítulos (tecla H)',
@@ -968,6 +979,7 @@ const ES = {
   'prog.eta': '(quedan unos {n} tramos)',
   'prog.etaTime': '· quedan {t}',
   'prog.translating': 'Traduciendo {done}/{total} frases',
+  'prog.translatingMid': 'Español → inglés → chino {done}/{total} frases',
 };
 
 const DICT = { zh: ZH, en: EN, es: ES };
