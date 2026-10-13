@@ -3,14 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>EchoLingo · 回声英语 — 英语视频精读，全部在本机完成</title>
-<meta name="description" content="导入英语视频，自动识别每一句话，右侧英中对照、逐词跟读高亮、点词查释义。识别与翻译全部在你的浏览器里跑，视频不出本机，断网可用。还能把画面里烧录的字幕就地模糊掉，逼自己先听。">
+<title>EchoLingo · 回声英语</title>
+<meta name="description" content="英语视频精读工具：自动生成双语字幕、逐词释义、画面字幕遮罩。识别与翻译全部在本机完成。">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#1f6feb">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f6feb'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' fill='white' text-anchor='middle'%3EEL%3C/text%3E%3C/svg%3E">
+<script>
+// 语言要在**首屏绘制之前**定下来，否则中文用户会先看到一闪而过的英文（或反过来）。
+// 这段是同步脚本，放在 <head> 里；下面的 fill() 在 </body> 之前同步跑完，
+// 浏览器第一帧就已经是正确语言。
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem('echolingo.site.lang'); } catch (e) {}
+  var lang = (saved === 'zh' || saved === 'en')
+    ? saved
+    : ((navigator.language || 'en').toLowerCase().indexOf('zh') === 0 ? 'zh' : 'en');
+  var h = document.documentElement;
+  h.lang = lang === 'zh' ? 'zh-CN' : 'en';
+  h.dataset.lang = lang;
+  window.__SITE_LANG__ = lang;
+})();
+</script>
 <style>
 /* 全部自包含：不引外部字体/图片/脚本。
    一是断网也能正常显示，二是避免任何跨域依赖。 */
+html:not([data-lang]) body { visibility: hidden; }   /* 语言没定好之前先别画 */
 :root {
   --bg: #0e1116; --panel: #161a21; --panel-2: #1b2029;
   --line: #262c36; --line-2: #333a46;
@@ -31,7 +48,6 @@ a { color: var(--brand); text-decoration: none; }
 a:hover { text-decoration: underline; }
 .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
 
-/* ---------- 顶栏 ---------- */
 header {
   position: sticky; top: 0; z-index: 50;
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
@@ -44,10 +60,18 @@ header {
   background: linear-gradient(160deg, #3d8bf8, #1a5fd0);
   display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 800;
 }
-.logo .sub { font-size: 12px; color: var(--text-3); font-weight: 400; margin-left: 2px; }
-.nav-links { margin-left: auto; display: flex; align-items: center; gap: 22px; font-size: 14px; }
+.logo .sub { font-size: 12px; color: var(--text-3); font-weight: 400; margin-left: 3px; }
+.nav-links { margin-left: auto; display: flex; align-items: center; gap: 20px; font-size: 14px; }
 .nav-links a { color: var(--text-2); }
 .nav-links a:hover { color: var(--text); text-decoration: none; }
+
+.lang-seg { display: inline-flex; background: var(--panel-2); border-radius: 8px; padding: 2px; gap: 2px; }
+.lang-seg button {
+  border: 0; background: transparent; padding: 5px 11px; border-radius: 6px;
+  cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--text-3);
+  font-family: inherit;
+}
+.lang-seg button.active { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.4); }
 
 .btn {
   display: inline-flex; align-items: center; gap: 7px;
@@ -60,7 +84,6 @@ header {
 .btn-primary:hover { background: #1a60d0; }
 .btn-lg { padding: 12px 22px; font-size: 15px; }
 
-/* ---------- 首屏 ---------- */
 .hero { padding: 74px 0 54px; text-align: center; }
 .badge {
   display: inline-flex; align-items: center; gap: 7px; margin-bottom: 20px;
@@ -68,17 +91,11 @@ header {
   border: 1px solid var(--line-2); background: var(--panel); color: var(--text-2);
 }
 .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
-h1 {
-  margin: 0 0 18px; font-size: clamp(30px, 5vw, 50px); line-height: 1.22;
-  letter-spacing: -.5px; font-weight: 800;
-}
+h1 { margin: 0 0 18px; font-size: clamp(30px, 5vw, 50px); line-height: 1.22; letter-spacing: -.5px; font-weight: 800; }
 h1 .hl { color: var(--brand); }
-.lede {
-  margin: 0 auto 30px; max-width: 660px; font-size: clamp(15px, 2vw, 17.5px);
-  color: var(--text-2);
-}
+.lede { margin: 0 auto 30px; max-width: 690px; font-size: clamp(15px, 2vw, 17.5px); color: var(--text-2); }
 .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 14px; }
-.cta-note { font-size: 13px; color: var(--text-3); }
+.cta-note { font-size: 13px; color: var(--text-3); max-width: 640px; margin: 0 auto; }
 
 .shot {
   margin: 44px auto 0; max-width: 1040px; border-radius: var(--radius);
@@ -86,15 +103,11 @@ h1 .hl { color: var(--brand); }
   box-shadow: 0 24px 60px rgba(0,0,0,.45);
 }
 .shot img { display: block; width: 100%; height: auto; }
-.shot figcaption {
-  padding: 11px 16px; font-size: 13px; color: var(--text-3);
-  border-top: 1px solid var(--line); text-align: left;
-}
+.shot figcaption { padding: 11px 16px; font-size: 13px; color: var(--text-3); border-top: 1px solid var(--line); text-align: left; }
 
-/* ---------- 通用区块 ---------- */
 section { padding: 66px 0; }
 section + section { border-top: 1px solid var(--line); }
-.sec-head { max-width: 700px; margin-bottom: 38px; }
+.sec-head { max-width: 720px; margin-bottom: 38px; }
 .sec-head h2 { margin: 0 0 10px; font-size: clamp(22px, 3.4vw, 30px); font-weight: 750; letter-spacing: -.3px; }
 .sec-head p { margin: 0; color: var(--text-2); font-size: 15.5px; }
 
@@ -102,17 +115,10 @@ section + section { border-top: 1px solid var(--line); }
 .grid-3 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
 .grid-2 { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
 
-.card {
-  padding: 22px; border-radius: var(--radius);
-  background: var(--panel); border: 1px solid var(--line);
-}
+.card { padding: 22px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line); }
 .card h3 { margin: 0 0 9px; font-size: 16.5px; font-weight: 650; }
 .card p { margin: 0; color: var(--text-2); font-size: 14.5px; }
-.card .ico {
-  width: 34px; height: 34px; border-radius: 9px; margin-bottom: 13px;
-  background: var(--brand-soft); color: var(--brand);
-  display: grid; place-items: center; font-size: 17px;
-}
+.card .ico { width: 34px; height: 34px; border-radius: 9px; margin-bottom: 13px; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; font-size: 17px; }
 .card.problem { border-color: rgba(217,164,65,.3); }
 .card.problem .ico { background: rgba(217,164,65,.13); color: var(--warn); }
 .card.solve { border-color: rgba(46,163,106,.3); }
@@ -124,7 +130,6 @@ kbd {
   background: var(--panel-2); font: 600 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--text);
 }
-
 table.kv { width: 100%; border-collapse: collapse; font-size: 14.5px; }
 table.kv td { padding: 9px 0; border-bottom: 1px solid var(--line); color: var(--text-2); }
 table.kv td:first-child { width: 190px; color: var(--text); }
@@ -138,21 +143,17 @@ pre {
 pre .c { color: var(--text-3); }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }
 p code, li code { background: var(--panel-2); padding: 1.5px 6px; border-radius: 5px; border: 1px solid var(--line); }
-
 ul.plain { margin: 0; padding-left: 20px; color: var(--text-2); font-size: 14.5px; }
 ul.plain li { margin-bottom: 7px; }
 
-footer {
-  padding: 40px 0 56px; border-top: 1px solid var(--line);
-  color: var(--text-3); font-size: 13.5px;
-}
+footer { padding: 40px 0 56px; border-top: 1px solid var(--line); color: var(--text-3); font-size: 13.5px; }
 footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: center; }
 
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .nav-links a:not(.btn) { display: none; }
   .hero { padding: 46px 0 36px; }
   section { padding: 48px 0; }
-  table.kv td:first-child { width: 118px; }
+  table.kv td:first-child { width: 130px; }
 }
 </style>
 </head>
@@ -162,14 +163,18 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: cent
   <div class="wrap nav">
     <div class="logo">
       <span class="mark">EL</span>
-      <span>EchoLingo<span class="sub">回声英语</span></span>
+      <span>EchoLingo<span class="sub" data-i18n="logo.sub">回声英语</span></span>
     </div>
     <nav class="nav-links">
-      <a href="#features">功能</a>
-      <a href="#screens">截图</a>
-      <a href="#offline">离线</a>
-      <a href="#mac">macOS 版</a>
-      <a class="btn btn-primary" href="app/">打开工具 →</a>
+      <a href="#features" data-i18n="nav.features">功能</a>
+      <a href="#screens" data-i18n="nav.screens">截图</a>
+      <a href="#offline" data-i18n="nav.offline">离线</a>
+      <a href="#mac" data-i18n="nav.mac">macOS 版</a>
+      <span class="lang-seg" id="langSeg">
+        <button type="button" data-lang-btn="zh">中文</button>
+        <button type="button" data-lang-btn="en">EN</button>
+      </span>
+      <a class="btn btn-primary" href="app/"><span data-i18n="nav.open">打开工具</span> →</a>
     </nav>
   </div>
 </header>
@@ -177,60 +182,60 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: cent
 <main>
 
 <div class="hero wrap">
-  <div class="badge"><span class="dot"></span>识别与翻译 100% 在本机完成 · 断网可用</div>
-  <h1>看英语视频，<span class="hl">不用再盯着字幕</span></h1>
-  <p class="lede">
+  <div class="badge"><span class="dot"></span><span data-i18n="hero.badge">识别与翻译 100% 在本机完成 · 断网可用</span></div>
+  <h1 data-i18n-html="hero.h1">看英语视频，<span class="hl">不用再盯着字幕</span></h1>
+  <p class="lede" data-i18n-html="hero.lede">
     导入一段英语视频，自动识别每一句话，右侧英中对照、播放到哪个词哪个词就变浅绿；
     点任意单词查释义与发音，整句可朗读可收藏。识别与翻译都在你自己的浏览器里跑，<strong>视频不出本机</strong>。
   </p>
   <div class="cta">
-    <a class="btn btn-primary btn-lg" href="app/">开始使用 →</a>
-    <a class="btn btn-lg" href="#features">看看有什么功能</a>
+    <a class="btn btn-primary btn-lg" href="app/"><span data-i18n="hero.cta1">开始使用</span> →</a>
+    <a class="btn btn-lg" href="#features" data-i18n="hero.cta2">看看有什么功能</a>
   </div>
-  <p class="cta-note">首次打开需下载识别与翻译模型（约 200 MB，只此一次），之后由浏览器缓存，拔网线也能继续用。</p>
+  <p class="cta-note" data-i18n="hero.note">首次打开需下载识别与翻译模型（约 200 MB，只此一次），之后由浏览器缓存，拔网线也能继续用。</p>
 
   <figure class="shot">
-    <img src="shots/preview-1-compare.png" alt="画面烧录字幕遮罩：左为关闭，右为开启后就地模糊" loading="lazy">
-    <figcaption>画面里烧录的英文字幕，可以就地模糊掉 —— 逼自己先听，按住 <kbd>Alt</kbd> 临时看原文。</figcaption>
+    <img src="shots/preview-1-compare.png" alt="On-screen subtitle mask: off on the left, blurred in place on the right" loading="lazy">
+    <figcaption data-i18n-html="hero.cap">画面里烧录的英文字幕，可以就地模糊掉 —— 逼自己先听，按住 <kbd>Alt</kbd> 临时看原文。</figcaption>
   </figure>
 </div>
 
 <section id="features">
   <div class="wrap">
     <div class="sec-head">
-      <h2>它解决的三个具体问题</h2>
-      <p>不是又一个"播放器 + 字幕"，针对的是精读英语视频时真正卡住的地方。</p>
+      <h2 data-i18n="feat.title">它解决的三个具体问题</h2>
+      <p data-i18n="feat.sub">不是又一个「播放器 + 字幕」，针对的是精读英语视频时真正卡住的地方。</p>
     </div>
     <div class="grid grid-3">
       <div class="card problem">
         <div class="ico">👁</div>
-        <h3>画面字幕让你在阅读，不是听力</h3>
-        <p>很多学习视频把英文字幕直接烧进了画面。眼睛盯着它，其实是在做阅读理解 —— 听力一点没练到。</p>
+        <h3 data-i18n="f1t">画面字幕让你在阅读，不是听力</h3>
+        <p data-i18n="f1b">很多学习视频把英文字幕直接烧进了画面。眼睛盯着它，其实是在做阅读理解 —— 听力一点没练到。</p>
       </div>
       <div class="card solve">
         <div class="ico">✓</div>
-        <h3>烧录字幕就地模糊</h3>
-        <p>只模糊画面底部那一条，人物、手势、上方的大字都不动。自动定位字幕位置，也可手动拖边界。</p>
+        <h3 data-i18n="f2t">烧录字幕就地模糊</h3>
+        <p data-i18n="f2b">只模糊画面底部那一条，人物、手势、上方的大字都不动。自动定位字幕位置，也可手动拖边界。</p>
       </div>
       <div class="card problem">
         <div class="ico">👁</div>
-        <h3>右侧译文也在剧透</h3>
-        <p>就算画面字幕糊了，眼睛还是会往右边的英文原文瞟。</p>
+        <h3 data-i18n="f3t">右侧译文也在剧透</h3>
+        <p data-i18n="f3b">就算画面字幕糊了，眼睛还是会往右边的英文原文瞟。</p>
       </div>
       <div class="card solve">
         <div class="ico">✓</div>
-        <h3>中英可分别收起</h3>
-        <p>英文、中文两个开关独立控制（<kbd>E</kbd> / <kbd>C</kbd>）。整个字幕面板也能收成一条把手（<kbd>H</kbd>），视频直接占满屏。</p>
+        <h3 data-i18n="f4t">中英可分别收起</h3>
+        <p data-i18n-html="f4b">英文、中文两个开关独立控制（<kbd>E</kbd> / <kbd>C</kbd>）。整个字幕面板也能收成一条把手（<kbd>H</kbd>），视频直接占满屏。</p>
       </div>
       <div class="card problem">
         <div class="ico">👁</div>
-        <h3>云端识别意味着上传视频</h3>
-        <p>大多数同类工具要把你的视频传到服务器上跑，慢、要排队，而且内容不再只属于你。</p>
+        <h3 data-i18n="f5t">云端识别意味着上传视频</h3>
+        <p data-i18n="f5b">大多数同类工具要把你的视频传到服务器上跑，慢、要排队，而且内容不再只属于你。</p>
       </div>
       <div class="card solve">
         <div class="ico">✓</div>
-        <h3>识别翻译全在本机</h3>
-        <p>whisper + opus-mt 的量化模型跑在浏览器里，用 WebAssembly 多线程。视频从不离开你的电脑。</p>
+        <h3 data-i18n="f6t">识别翻译全在本机</h3>
+        <p data-i18n="f6b">whisper + opus-mt 的量化模型跑在浏览器里，用 WebAssembly 多线程。视频从不离开你的电脑。</p>
       </div>
     </div>
   </div>
@@ -239,26 +244,25 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: cent
 <section id="screens">
   <div class="wrap">
     <div class="sec-head">
-      <h2>界面</h2>
-      <p>深色 / 浅色两套配色，界面中英双语可切。下面是实拍，不是效果图。</p>
+      <h2 data-i18n="scr.title">界面</h2>
+      <p data-i18n="scr.sub">深色 / 浅色两套配色，界面中英双语可切。下面是实拍，不是效果图。</p>
     </div>
-
     <div class="grid grid-2">
       <figure class="shot" style="margin:0">
-        <img src="shots/lang-preview.png" alt="右侧中英文独立开关的三个状态" loading="lazy">
-        <figcaption><strong>中英独立收起</strong>：默认都显示；关掉英文只留中文练听力；也可以两个都关，只剩时间码。</figcaption>
+        <img src="shots/lang-preview.png" alt="English and Chinese columns collapsed independently" loading="lazy">
+        <figcaption data-i18n-html="scr.c1"><strong>中英独立收起</strong>：默认都显示；关掉英文只留中文练听力；也可以两个都关，只剩时间码。</figcaption>
       </figure>
       <figure class="shot" style="margin:0">
-        <img src="shots/collapse-preview.png" alt="字幕面板收起前后对比" loading="lazy">
-        <figcaption><strong>面板收起</strong>：点面板边缘的竖排把手，整个右侧收成 26px，视频区宽 857 → 1378 px。</figcaption>
+        <img src="shots/collapse-preview.png" alt="Collapsing the subtitle panel" loading="lazy">
+        <figcaption data-i18n-html="scr.c2"><strong>面板收起</strong>：点面板边缘的竖排把手，整个右侧收成 26px，视频区宽 857 → 1378 px。</figcaption>
       </figure>
       <figure class="shot" style="margin:0">
-        <img src="shots/preview-2-styles.png" alt="四种遮罩样式：柔和模糊、毛玻璃、马赛克、纯色遮罩条" loading="lazy">
-        <figcaption><strong>四种遮罩样式</strong>，默认柔和模糊（最自然，看不出遮罩边界）。</figcaption>
+        <img src="shots/preview-2-styles.png" alt="Four mask styles: soft blur, frosted glass, mosaic, solid bar" loading="lazy">
+        <figcaption data-i18n-html="scr.c3"><strong>四种遮罩样式</strong>，默认柔和模糊（最自然，看不出遮罩边界）。</figcaption>
       </figure>
       <figure class="shot" style="margin:0">
-        <img src="shots/mask-settings.png" alt="设置面板里的画面字幕遮罩分区" loading="lazy">
-        <figcaption><strong>可控</strong>：样式、模糊强度、自动定位开关、上下边界，都能在设置里调。</figcaption>
+        <img src="shots/mask-settings.png" alt="The subtitle mask section in Settings" loading="lazy">
+        <figcaption data-i18n-html="scr.c4"><strong>可控</strong>：样式、模糊强度、自动定位开关、上下边界，都能在设置里调。</figcaption>
       </figure>
     </div>
   </div>
@@ -267,20 +271,20 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: cent
 <section id="keys">
   <div class="wrap">
     <div class="sec-head">
-      <h2>快捷键</h2>
-      <p>练听力时手不用离开键盘。</p>
+      <h2 data-i18n="key.title">快捷键</h2>
+      <p data-i18n="key.sub">练听力时手不用离开键盘。</p>
     </div>
     <table class="kv">
-      <tr><td><kbd>空格</kbd></td><td>播放 / 暂停</td></tr>
-      <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>上一句 / 下一句</td></tr>
-      <tr><td><kbd>R</kbd></td><td>重播本句</td></tr>
-      <tr><td><kbd>L</kbd></td><td>循环本句</td></tr>
-      <tr><td><kbd>S</kbd></td><td>朗读本句</td></tr>
-      <tr><td><kbd>D</kbd></td><td>收藏本句</td></tr>
-      <tr><td><kbd>E</kbd> / <kbd>C</kbd></td><td>显示 / 隐藏右侧英文 / 中文</td></tr>
-      <tr><td><kbd>H</kbd></td><td>收起 / 展开右侧字幕面板</td></tr>
-      <tr><td><kbd>Alt</kbd></td><td>临时显示被模糊的画面字幕原文</td></tr>
-      <tr><td><kbd>Esc</kbd></td><td>关闭浮层</td></tr>
+      <tr><td><kbd>Space</kbd></td><td data-i18n="k1">播放 / 暂停</td></tr>
+      <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td data-i18n="k2">上一句 / 下一句</td></tr>
+      <tr><td><kbd>R</kbd></td><td data-i18n="k3">重播本句</td></tr>
+      <tr><td><kbd>L</kbd></td><td data-i18n="k4">循环本句</td></tr>
+      <tr><td><kbd>S</kbd></td><td data-i18n="k5">朗读本句</td></tr>
+      <tr><td><kbd>D</kbd></td><td data-i18n="k6">收藏本句</td></tr>
+      <tr><td><kbd>E</kbd> / <kbd>C</kbd></td><td data-i18n="k7">显示 / 隐藏右侧英文 / 中文</td></tr>
+      <tr><td><kbd>H</kbd></td><td data-i18n="k8">收起 / 展开右侧字幕面板</td></tr>
+      <tr><td><kbd>Alt</kbd></td><td data-i18n="k9">临时显示被模糊的画面字幕原文</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td data-i18n="k10">关闭浮层</td></tr>
     </table>
   </div>
 </section>
@@ -288,25 +292,25 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: cent
 <section id="offline">
   <div class="wrap">
     <div class="sec-head">
-      <h2>关于"离线"，如实说明</h2>
-      <p>不想用一句"完全离线"糊过去，边界说清楚比较好。</p>
+      <h2 data-i18n="off.title">关于「离线」，如实说明</h2>
+      <p data-i18n="off.sub">不想用一句「完全离线」糊过去，边界说清楚比较好。</p>
     </div>
     <div class="grid grid-2">
       <div class="card">
-        <h3>首次访问需要联网一次</h3>
-        <p>识别模型（Whisper Base 约 80 MB / Tiny 约 44 MB）与翻译模型（约 120 MB）要下载一次。之后由 Service Worker 缓存，再打开就是断网可用。</p>
+        <h3 data-i18n="o1t">首次访问需要联网一次</h3>
+        <p data-i18n="o1b">识别模型（Whisper Base 约 80 MB / Tiny 约 44 MB）与翻译模型（约 120 MB）要下载一次。之后由 Service Worker 缓存，再打开就是断网可用。</p>
       </div>
       <div class="card">
-        <h3>之后就不再需要网络</h3>
-        <p>识别、翻译、词典查询、语音合成全部在本机完成。<strong>没有任何服务器参与</strong>，也没有任何数据上传 —— 你可以在加载完之后直接拔掉网线验证。</p>
+        <h3 data-i18n="o2t">之后就不再需要网络</h3>
+        <p data-i18n-html="o2b">识别、翻译、词典查询、语音合成全部在本机完成。<strong>没有任何服务器参与</strong>，也没有任何数据上传 —— 你可以在加载完之后直接拔掉网线验证。</p>
       </div>
       <div class="card">
-        <h3>视频从不离开本机</h3>
-        <p>视频用 <code>blob:</code> URL 加载，只存在于当前页面内存里。页面关闭即释放，不会被写入任何服务器或云盘。</p>
+        <h3 data-i18n="o3t">视频从不离开本机</h3>
+        <p data-i18n-html="o3b">视频用 <code>blob:</code> URL 加载，只存在于当前页面内存里。页面关闭即释放，不会被写入任何服务器或云盘。</p>
       </div>
       <div class="card">
-        <h3>想要彻底的离线体验</h3>
-        <p>把它打包成 macOS 应用：模型随包带着，连"首次下载"这一步都省了，双击即是完整功能。</p>
+        <h3 data-i18n="o4t">想要彻底的离线体验</h3>
+        <p data-i18n="o4b">把它打包成 macOS 应用：模型随包带着，连「首次下载」这一步都省了，双击即是完整功能。</p>
       </div>
     </div>
   </div>
@@ -315,19 +319,19 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: cent
 <section id="mac">
   <div class="wrap">
     <div class="sec-head">
-      <h2>打包成 macOS 应用</h2>
-      <p>自包含的 <code>.app</code>（约 553 MB，其中模型 237 MB），模型内置，双击即用。</p>
+      <h2 data-i18n="mac.title">打包成 macOS 应用</h2>
+      <p data-i18n-html="mac.sub">自包含的 <code>.app</code>（约 553 MB，其中模型 237 MB），模型内置，双击即用。</p>
     </div>
-    <pre><span class="c"># 需要 node，以及 macOS 自带的 ditto / plutil / codesign</span>
+<pre data-i18n-html="mac.pre"><span class="c"># 需要 node，以及 macOS 自带的 ditto / plutil / codesign</span>
 git clone https://github.com/KJHAJKSLFHA/echolingo
 cd echolingo/desktop
 node build.mjs          <span class="c"># → ../dist/EchoLingo.app</span>
 open ../dist/EchoLingo.app</pre>
     <ul class="plain">
-      <li>打包脚本<strong>零依赖</strong>：自己下 Electron 的 zip、用 <code>ditto</code> 解压、手工组装 bundle、<code>codesign</code> ad-hoc 重签。</li>
-      <li>首次构建会下载 Electron（124 MB，镜像优先），之后重建是秒级。</li>
-      <li>Apple Silicon 上 ad-hoc 重签不能省 —— 签名无效的 arm64 应用会被系统拒绝启动。</li>
-      <li>没有 Apple 开发者签名，首次打开若被拦：右键 →「打开」，或 <code>xattr -dr com.apple.quarantine /Applications/EchoLingo.app</code>。</li>
+      <li data-i18n-html="mac.l1">打包脚本<strong>零依赖</strong>：自己下 Electron 的 zip、用 <code>ditto</code> 解压、手工组装 bundle、<code>codesign</code> ad-hoc 重签。</li>
+      <li data-i18n="mac.l2">首次构建会下载 Electron（124 MB，镜像优先），之后重建是秒级。</li>
+      <li data-i18n="mac.l3">Apple Silicon 上 ad-hoc 重签不能省 —— 签名无效的 arm64 应用会被系统拒绝启动。</li>
+      <li data-i18n-html="mac.l4">没有 Apple 开发者签名，首次打开若被拦：右键 →「打开」，或 <code>xattr -dr com.apple.quarantine /Applications/EchoLingo.app</code>。</li>
     </ul>
   </div>
 </section>
@@ -335,33 +339,33 @@ open ../dist/EchoLingo.app</pre>
 <section id="tech">
   <div class="wrap">
     <div class="sec-head">
-      <h2>技术上的几个关键选择</h2>
-      <p>如果你也打算做类似的东西，这几条能帮你少踩坑。</p>
+      <h2 data-i18n="tech.title">技术上的几个关键选择</h2>
+      <p data-i18n="tech.sub">如果你也打算做类似的东西，这几条能帮你少踩坑。</p>
     </div>
     <div class="grid grid-3">
       <div class="card">
-        <h3>必须有 COOP / COEP 响应头</h3>
-        <p>onnxruntime 的 wasm 后端要开多线程就得有 <code>SharedArrayBuffer</code>，而浏览器只在 <code>crossOriginIsolated</code> 时放开它 —— 条件正是这两个响应头。少了不会报错，只会悄悄退化成单线程。</p>
+        <h3 data-i18n="t1t">必须有 COOP / COEP 响应头</h3>
+        <p data-i18n-html="t1b">onnxruntime 的 wasm 后端要开多线程就得有 <code>SharedArrayBuffer</code>，而浏览器只在 <code>crossOriginIsolated</code> 时放开它 —— 条件正是这两个响应头。少了不会报错，只会悄悄退化成单线程。</p>
       </div>
       <div class="card">
-        <h3>多会话并行，而不是单会话多线程</h3>
-        <p>一段音频不管多长都要付一次约 1.6 秒的"30 秒窗口"编码器固定开销，加线程救不了它。把切好的段分给多个 Worker 同时跑才是正解，而且不改变拼接结果，准确度零损失。</p>
+        <h3 data-i18n="t2t">多会话并行，而不是单会话多线程</h3>
+        <p data-i18n="t2b">一段音频不管多长都要付一次约 1.6 秒的「30 秒窗口」编码器固定开销，加线程救不了它。把切好的段分给多个 Worker 同时跑才是正解，而且不改变拼接结果，准确度零损失。</p>
       </div>
       <div class="card">
-        <h3>字幕遮罩用 backdrop-filter</h3>
-        <p>盖一个空 div 让合成器去模糊背后的像素，不复制视频帧、不逐帧重绘。只有马赛克样式需要退回 canvas。</p>
+        <h3 data-i18n="t3t">字幕遮罩用 backdrop-filter</h3>
+        <p data-i18n="t3b">盖一个空 div 让合成器去模糊背后的像素，不复制视频帧、不逐帧重绘。只有马赛克样式需要退回 canvas。</p>
       </div>
       <div class="card">
-        <h3>逐词时间戳只贵 13%</h3>
-        <p>实测 <code>'word'</code> 比不带时间戳贵约 13%，而句子边界和跟读高亮都依赖它。有些环境下 <code>return_timestamps: true</code> 对从中间切出的段会返回空文本 —— 这个坑很深。</p>
+        <h3 data-i18n="t4t">逐词时间戳只贵 13%</h3>
+        <p data-i18n-html="t4b">实测 <code>'word'</code> 比不带时间戳贵约 13%，而句子边界和跟读高亮都依赖它。有些环境下 <code>return_timestamps: true</code> 对从中间切出的段会返回空文本 —— 这个坑很深。</p>
       </div>
       <div class="card">
-        <h3>每一段音频必须短于 30 秒</h3>
-        <p>whisper 的特征提取器窗口固定 30 秒，超出的部分是<strong>静默裁掉</strong>的，不报错也不自动分块。表现就是「少句子、上下文接不上」。</p>
+        <h3 data-i18n="t5t">每一段音频必须短于 30 秒</h3>
+        <p data-i18n-html="t5b">whisper 的特征提取器窗口固定 30 秒，超出的部分是<strong>静默裁掉</strong>的，不报错也不自动分块。表现就是「少句子、上下文接不上」。</p>
       </div>
       <div class="card">
-        <h3>词典也要能离线</h3>
-        <p>ECDICT 按首字母切成 27 个分片，查到哪个词才加载哪个分片，34000 词条不会一次性拖进来。</p>
+        <h3 data-i18n="t6t">词典也要能离线</h3>
+        <p data-i18n="t6b">ECDICT 按首字母切成 27 个分片，查到哪个词才加载哪个分片，34000 词条不会一次性拖进来。</p>
       </div>
     </div>
   </div>
@@ -371,12 +375,171 @@ open ../dist/EchoLingo.app</pre>
 
 <footer>
   <div class="wrap">
-    <span>EchoLingo · 回声英语</span>
-    <span>MIT License</span>
+    <span>EchoLingo · <span data-i18n="logo.sub">回声英语</span></span>
+    <span data-i18n="ft.license">MIT License</span>
     <a href="https://github.com/KJHAJKSLFHA/echolingo">GitHub</a>
-    <span style="margin-left:auto">词典数据 ECDICT（MIT）· 模型 Whisper / opus-mt 的 ONNX 量化版 · 运行时 transformers.js + onnxruntime-web</span>
+    <a href="app/" data-i18n="ft.open">打开工具</a>
+    <span style="margin-left:auto" data-i18n="ft.credits">词典数据 ECDICT（MIT）· 模型 Whisper / opus-mt 的 ONNX 量化版 · 运行时 transformers.js + onnxruntime-web</span>
   </div>
 </footer>
 
+<script>
+/* 双语字典。
+   规则：带 <kbd>/<code>/<strong> 这类行内标记的用 data-i18n-html（走 innerHTML），
+   其余一律走 textContent —— 即使某条词条写错也注入不出问题。 */
+var SITE_I18N = {
+  zh: {
+    'page.title': 'EchoLingo · 回声英语 — 英语视频精读，全部在本机完成',
+    'page.desc': '导入英语视频，自动识别每一句话，右侧英中对照、逐词跟读高亮、点词查释义。识别与翻译全部在你的浏览器里跑，视频不出本机，断网可用。还能把画面里烧录的字幕就地模糊掉，逼自己先听。',
+    'logo.sub': '回声英语',
+    'nav.features': '功能', 'nav.screens': '截图', 'nav.offline': '离线', 'nav.mac': 'macOS 版', 'nav.open': '打开工具',
+    'hero.badge': '识别与翻译 100% 在本机完成 · 断网可用',
+    'hero.h1': '看英语视频，<span class="hl">不用再盯着字幕</span>',
+    'hero.lede': '导入一段英语视频，自动识别每一句话，右侧英中对照、播放到哪个词哪个词就变浅绿；点任意单词查释义与发音，整句可朗读可收藏。识别与翻译都在你自己的浏览器里跑，<strong>视频不出本机</strong>。',
+    'hero.cta1': '开始使用', 'hero.cta2': '看看有什么功能',
+    'hero.note': '首次打开需下载识别与翻译模型（约 200 MB，只此一次），之后由浏览器缓存，拔网线也能继续用。',
+    'hero.cap': '画面里烧录的英文字幕，可以就地模糊掉 —— 逼自己先听，按住 <kbd>Alt</kbd> 临时看原文。',
+    'feat.title': '它解决的三个具体问题',
+    'feat.sub': '不是又一个「播放器 + 字幕」，针对的是精读英语视频时真正卡住的地方。',
+    'f1t': '画面字幕让你在阅读，不是听力', 'f1b': '很多学习视频把英文字幕直接烧进了画面。眼睛盯着它，其实是在做阅读理解 —— 听力一点没练到。',
+    'f2t': '烧录字幕就地模糊', 'f2b': '只模糊画面底部那一条，人物、手势、上方的大字都不动。自动定位字幕位置，也可手动拖边界。',
+    'f3t': '右侧译文也在剧透', 'f3b': '就算画面字幕糊了，眼睛还是会往右边的英文原文瞟。',
+    'f4t': '中英可分别收起', 'f4b': '英文、中文两个开关独立控制（<kbd>E</kbd> / <kbd>C</kbd>）。整个字幕面板也能收成一条把手（<kbd>H</kbd>），视频直接占满屏。',
+    'f5t': '云端识别意味着上传视频', 'f5b': '大多数同类工具要把你的视频传到服务器上跑，慢、要排队，而且内容不再只属于你。',
+    'f6t': '识别翻译全在本机', 'f6b': 'whisper + opus-mt 的量化模型跑在浏览器里，用 WebAssembly 多线程。视频从不离开你的电脑。',
+    'scr.title': '界面', 'scr.sub': '深色 / 浅色两套配色，界面中英双语可切。下面是实拍，不是效果图。',
+    'scr.c1': '<strong>中英独立收起</strong>：默认都显示；关掉英文只留中文练听力；也可以两个都关，只剩时间码。',
+    'scr.c2': '<strong>面板收起</strong>：点面板边缘的竖排把手，整个右侧收成 26px，视频区宽 857 → 1378 px。',
+    'scr.c3': '<strong>四种遮罩样式</strong>，默认柔和模糊（最自然，看不出遮罩边界）。',
+    'scr.c4': '<strong>可控</strong>：样式、模糊强度、自动定位开关、上下边界，都能在设置里调。',
+    'key.title': '快捷键', 'key.sub': '练听力时手不用离开键盘。',
+    'k1': '播放 / 暂停', 'k2': '上一句 / 下一句', 'k3': '重播本句', 'k4': '循环本句', 'k5': '朗读本句',
+    'k6': '收藏本句', 'k7': '显示 / 隐藏右侧英文 / 中文', 'k8': '收起 / 展开右侧字幕面板',
+    'k9': '临时显示被模糊的画面字幕原文', 'k10': '关闭浮层',
+    'off.title': '关于「离线」，如实说明', 'off.sub': '不想用一句「完全离线」糊过去，边界说清楚比较好。',
+    'o1t': '首次访问需要联网一次', 'o1b': '识别模型（Whisper Base 约 80 MB / Tiny 约 44 MB）与翻译模型（约 120 MB）要下载一次。之后由 Service Worker 缓存，再打开就是断网可用。',
+    'o2t': '之后就不再需要网络', 'o2b': '识别、翻译、词典查询、语音合成全部在本机完成。<strong>没有任何服务器参与</strong>，也没有任何数据上传 —— 你可以在加载完之后直接拔掉网线验证。',
+    'o3t': '视频从不离开本机', 'o3b': '视频用 <code>blob:</code> URL 加载，只存在于当前页面内存里。页面关闭即释放，不会被写入任何服务器或云盘。',
+    'o4t': '想要彻底的离线体验', 'o4b': '把它打包成 macOS 应用：模型随包带着，连「首次下载」这一步都省了，双击即是完整功能。',
+    'mac.title': '打包成 macOS 应用',
+    'mac.sub': '自包含的 <code>.app</code>（约 553 MB，其中模型 237 MB），模型内置，双击即用。',
+    'mac.pre': '<span class="c"># 需要 node，以及 macOS 自带的 ditto / plutil / codesign</span>\ngit clone https://github.com/KJHAJKSLFHA/echolingo\ncd echolingo/desktop\nnode build.mjs          <span class="c"># → ../dist/EchoLingo.app</span>\nopen ../dist/EchoLingo.app',
+    'mac.l1': '打包脚本<strong>零依赖</strong>：自己下 Electron 的 zip、用 <code>ditto</code> 解压、手工组装 bundle、<code>codesign</code> ad-hoc 重签。',
+    'mac.l2': '首次构建会下载 Electron（124 MB，镜像优先），之后重建是秒级。',
+    'mac.l3': 'Apple Silicon 上 ad-hoc 重签不能省 —— 签名无效的 arm64 应用会被系统拒绝启动。',
+    'mac.l4': '没有 Apple 开发者签名，首次打开若被拦：右键 →「打开」，或 <code>xattr -dr com.apple.quarantine /Applications/EchoLingo.app</code>。',
+    'tech.title': '技术上的几个关键选择', 'tech.sub': '如果你也打算做类似的东西，这几条能帮你少踩坑。',
+    't1t': '必须有 COOP / COEP 响应头', 't1b': 'onnxruntime 的 wasm 后端要开多线程就得有 <code>SharedArrayBuffer</code>，而浏览器只在 <code>crossOriginIsolated</code> 时放开它 —— 条件正是这两个响应头。少了不会报错，只会悄悄退化成单线程。',
+    't2t': '多会话并行，而不是单会话多线程', 't2b': '一段音频不管多长都要付一次约 1.6 秒的「30 秒窗口」编码器固定开销，加线程救不了它。把切好的段分给多个 Worker 同时跑才是正解，而且不改变拼接结果，准确度零损失。',
+    't3t': '字幕遮罩用 backdrop-filter', 't3b': '盖一个空 div 让合成器去模糊背后的像素，不复制视频帧、不逐帧重绘。只有马赛克样式需要退回 canvas。',
+    't4t': '逐词时间戳只贵 13%', 't4b': '实测 <code>\'word\'</code> 比不带时间戳贵约 13%，而句子边界和跟读高亮都依赖它。有些环境下 <code>return_timestamps: true</code> 对从中间切出的段会返回空文本 —— 这个坑很深。',
+    't5t': '每一段音频必须短于 30 秒', 't5b': 'whisper 的特征提取器窗口固定 30 秒，超出的部分是<strong>静默裁掉</strong>的，不报错也不自动分块。表现就是「少句子、上下文接不上」。',
+    't6t': '词典也要能离线', 't6b': 'ECDICT 按首字母切成 27 个分片，查到哪个词才加载哪个分片，34000 词条不会一次性拖进来。',
+    'ft.license': 'MIT License', 'ft.open': '打开工具',
+    'ft.credits': '词典数据 ECDICT（MIT）· 模型 Whisper / opus-mt 的 ONNX 量化版 · 运行时 transformers.js + onnxruntime-web'
+  },
+
+  en: {
+    'page.title': 'EchoLingo — close-read English videos, entirely on your machine',
+    'page.desc': 'Drop in an English video and every sentence is transcribed automatically. Bilingual subtitles, word-by-word highlighting, click any word for its meaning. Recognition and translation run in your browser, so your video never leaves your machine. Burned-in subtitles can be blurred in place so you actually listen.',
+    'logo.sub': 'English',
+    'nav.features': 'Features', 'nav.screens': 'Screenshots', 'nav.offline': 'Offline', 'nav.mac': 'macOS app', 'nav.open': 'Open the tool',
+    'hero.badge': 'Recognition and translation run 100% on your machine · works offline',
+    'hero.h1': 'Watch English videos, <span class="hl">without staring at subtitles</span>',
+    'hero.lede': 'Drop in an English video and every sentence is transcribed automatically. English and Chinese side by side, with word-by-word highlighting as it plays; click any word for its meaning and pronunciation, replay or save whole sentences. Recognition and translation run in your own browser, so <strong>your video never leaves your machine</strong>.',
+    'hero.cta1': 'Get started', 'hero.cta2': 'See what it does',
+    'hero.note': 'The first visit downloads the speech and translation models (about 200 MB, one time). After that your browser caches them and everything keeps working with the network off.',
+    'hero.cap': 'Subtitles burned into the picture can be blurred in place, so you have to listen first. Hold <kbd>Alt</kbd> to peek at the original.',
+    'feat.title': 'Three specific problems it solves',
+    'feat.sub': 'Not just another player with subtitles. It targets what actually gets in the way when you study a video closely.',
+    'f1t': 'On-screen subtitles mean you are reading, not listening',
+    'f1b': 'Many learning videos burn the English subtitles right into the picture. Staring at them is reading practice, and you get no listening practice at all.',
+    'f2t': 'Burned-in subtitles blurred in place',
+    'f2b': 'Only the strip at the bottom of the picture is blurred. The speaker, the gestures, the large text above all stay untouched. The band is located automatically and can be dragged by hand.',
+    'f3t': 'The translation panel spoils it too',
+    'f3b': 'Even with the on-screen subtitles blurred, your eyes still drift to the English on the right.',
+    'f4t': 'English and Chinese collapse independently',
+    'f4b': 'Two independent switches (<kbd>E</kbd> / <kbd>C</kbd>). The whole subtitle panel can also collapse into a slim handle (<kbd>H</kbd>) so the video fills the screen.',
+    'f5t': 'Cloud transcription means uploading your video',
+    'f5b': 'Most tools like this send your video to a server. Slow, queued, and the content is no longer only yours.',
+    'f6t': 'Recognition and translation are local',
+    'f6b': 'Quantized whisper and opus-mt models run in your browser on multi-threaded WebAssembly. Your video never leaves your computer.',
+    'scr.title': 'Interface', 'scr.sub': 'Dark and light themes, and the whole UI switches between Chinese and English. These are real captures, not mockups.',
+    'scr.c1': '<strong>English and Chinese collapse independently</strong>: both shown by default; hide English to practise listening with Chinese only; hide both to leave just the time codes.',
+    'scr.c2': '<strong>Collapse the panel</strong>: click the vertical handle on its edge and the whole right side shrinks to 26 px. The video area goes from 857 to 1378 px wide.',
+    'scr.c3': '<strong>Four mask styles</strong>, with soft blur as the default (the most natural, you cannot see the mask edge).',
+    'scr.c4': '<strong>Adjustable</strong>: style, blur strength, auto-detect and the top/bottom edges are all in Settings.',
+    'key.title': 'Keyboard shortcuts', 'key.sub': 'Your hands never leave the keyboard.',
+    'k1': 'Play / pause', 'k2': 'Previous / next sentence', 'k3': 'Replay this sentence', 'k4': 'Loop this sentence',
+    'k5': 'Read this sentence aloud', 'k6': 'Save this sentence', 'k7': 'Show / hide the English or Chinese column',
+    'k8': 'Collapse / expand the subtitle panel', 'k9': 'Peek at the blurred on-screen subtitles', 'k10': 'Close overlays',
+    'off.title': 'About "offline", the honest version',
+    'off.sub': 'Rather than hide behind the phrase "fully offline", here are the actual boundaries.',
+    'o1t': 'The first visit needs the network, once',
+    'o1b': 'The speech models (Whisper Base about 80 MB / Tiny about 44 MB) and the translation model (about 120 MB) have to be downloaded once. After that the Service Worker caches them and it opens with the network off.',
+    'o2t': 'After that, no network at all',
+    'o2b': 'Recognition, translation, dictionary lookups and speech synthesis all happen locally. <strong>No server is involved</strong> and nothing is uploaded. You can pull the network cable after loading and check for yourself.',
+    'o3t': 'Your video never leaves the machine',
+    'o3b': 'Videos load through a <code>blob:</code> URL and exist only in the current page\u2019s memory. They are released when the page closes and are never written to any server or cloud drive.',
+    'o4t': 'Want a fully offline experience',
+    'o4b': 'Package it as a macOS app: the models travel inside the bundle, so even the first download disappears. Double-click and everything is there.',
+    'mac.title': 'Package it as a macOS app',
+    'mac.sub': 'A self-contained <code>.app</code> (about 553 MB, 237 MB of which is models). Models included, double-click to run.',
+    'mac.pre': '<span class="c"># needs node, plus the ditto / plutil / codesign that ship with macOS</span>\ngit clone https://github.com/KJHAJKSLFHA/echolingo\ncd echolingo/desktop\nnode build.mjs          <span class="c"># → ../dist/EchoLingo.app</span>\nopen ../dist/EchoLingo.app',
+    'mac.l1': 'The build script is <strong>dependency-free</strong>: it downloads the Electron zip itself, extracts with <code>ditto</code>, assembles the bundle by hand and re-signs it ad-hoc with <code>codesign</code>.',
+    'mac.l2': 'The first build downloads Electron (124 MB, mirror first); rebuilds after that take seconds.',
+    'mac.l3': 'On Apple Silicon the ad-hoc re-sign is not optional. An arm64 app with an invalid signature is refused by the system.',
+    'mac.l4': 'There is no Apple Developer signature, so if the first launch is blocked: right-click, then Open, or <code>xattr -dr com.apple.quarantine /Applications/EchoLingo.app</code>.',
+    'tech.title': 'A few key decisions', 'tech.sub': 'If you are building something similar, these will save you some pain.',
+    't1t': 'COOP / COEP headers are mandatory',
+    't1b': 'The onnxruntime wasm backend needs <code>SharedArrayBuffer</code> for multi-threading, and browsers only expose it when <code>crossOriginIsolated</code> is true, which is exactly these two response headers. Nothing errors without them; it just silently falls back to a single thread.',
+    't2t': 'Many sessions in parallel, not one session with many threads',
+    't2b': 'Every chunk of audio pays a fixed ~1.6 s "30-second window" encoder cost no matter how short it is, and threads cannot help with that. Handing the chunks to several Workers at once does, and it does not change the resulting word sequence at all, so accuracy is untouched.',
+    't3t': 'The subtitle mask uses backdrop-filter',
+    't3b': 'An empty div blurs the pixels behind it, so there is no video-frame copying and no per-frame redraw. Only the mosaic style falls back to a canvas.',
+    't4t': 'Word timestamps cost only 13% more',
+    't4b': 'Measured: <code>\'word\'</code> is about 13% slower than no timestamps, and sentence boundaries plus karaoke highlighting both depend on it. In some environments <code>return_timestamps: true</code> returns empty text for segments cut from mid-speech. It is a deep trap.',
+    't5t': 'Every audio chunk must be under 30 seconds',
+    't5b': 'The whisper feature extractor window is fixed at 30 seconds. Anything beyond is <strong>silently truncated</strong>, with no error and no automatic chunking. It shows up as missing sentences and broken context.',
+    't6t': 'The dictionary has to work offline too',
+    't6b': 'ECDICT is split into 27 shards by first letter, so only the shard for the word you look up is loaded. 34,000 entries never arrive all at once.',
+    'ft.license': 'MIT License', 'ft.open': 'Open the tool',
+    'ft.credits': 'Dictionary data ECDICT (MIT) · Whisper / opus-mt ONNX quantized models · transformers.js + onnxruntime-web'
+  }
+};
+
+(function () {
+  var lang = window.__SITE_LANG__ || 'zh';
+  var desc = document.querySelector('meta[name="description"]');
+
+  function fill(l) {
+    var d = SITE_I18N[l];
+    if (!d) return;
+    document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en';
+    document.documentElement.dataset.lang = l;
+    if (d['page.title']) document.title = d['page.title'];
+    if (desc && d['page.desc']) desc.setAttribute('content', d['page.desc']);
+    document.querySelectorAll('[data-i18n]').forEach(function (n) {
+      var v = d[n.dataset.i18n];
+      if (typeof v === 'string') n.textContent = v;
+    });
+    document.querySelectorAll('[data-i18n-html]').forEach(function (n) {
+      var v = d[n.dataset.i18nHtml];
+      if (typeof v === 'string') n.innerHTML = v;
+    });
+    document.querySelectorAll('[data-lang-btn]').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.langBtn === l);
+    });
+    try { localStorage.setItem('echolingo.site.lang', l); } catch (e) {}
+  }
+
+  document.getElementById('langSeg').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-lang-btn]');
+    if (b) fill(b.dataset.langBtn);
+  });
+
+  fill(lang);
+})();
+</script>
 </body>
 </html>
