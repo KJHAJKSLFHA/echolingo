@@ -85,7 +85,8 @@ async function pathSize(p) {
 }
 
 async function appVersion() {
-  const src = await readFile(path.join(PROJECT, 'js', 'app.js'), 'utf8');
+  // 工具本体在 app/ 下（仓库根目录留给了产品官网首页）
+  const src = await readFile(path.join(SITE_SRC, 'js', 'app.js'), 'utf8');
   const m = src.match(/APP_VER\s*=\s*'([^']+)'/);
   return m ? m[1] : '1.0.0';
 }

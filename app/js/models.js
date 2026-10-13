@@ -5,22 +5,50 @@
 // 界面也不会留下一个「选了就报错」的选项。
 
 export const ASR_MODELS = [
+  // ── 英语 ──
+  // `.en` 后缀是**纯英语**模型：更小、更快、英语上更准。
   {
     id: 'whisper-base.en',
     label: 'Whisper Base (EN)',
     sizeMB: 80,
+    lang: 'en',
     descKey: 'model.base.desc',
   },
   {
     id: 'whisper-tiny.en',
     label: 'Whisper Tiny (EN)',
     sizeMB: 44,
+    lang: 'en',
     descKey: 'model.tiny.desc',
+  },
+
+  // ── 西班牙语 ──
+  // ⚠️ 西语**必须**用多语言版（不带 .en）。`.en` 那两份是纯英语训练的，
+  //    喂西语音频只会得到一串无意义的猜测，而且**不会报错** —— 所以换西语
+  //    不是「可选优化」，是「换一套模型」。
+  //    多语言版其实也能识别英语，只是同尺寸下英语精度不如专用版，
+  //    所以英语仍然优先走上面那两个。
+  {
+    id: 'whisper-base',
+    label: 'Whisper Base (ES)',
+    sizeMB: 80,
+    lang: 'es',
+    descKey: 'model.baseEs.desc',
+  },
+  {
+    id: 'whisper-tiny',
+    label: 'Whisper Tiny (ES)',
+    sizeMB: 44,
+    lang: 'es',
+    descKey: 'model.tinyEs.desc',
   },
 ];
 
 // 默认用 base：俚语、连读、口音词明显比 tiny 准，代价是识别时间约 1.5 倍。
 export const DEFAULT_ASR_MODEL = 'whisper-base.en';
+
+/** 这个识别模型对应哪种语言。认不出来就按英语算（历史行为）。 */
+export const modelLang = (id) => modelMeta(id)?.lang || 'en';
 
 // transformers.js 在本地模型目录里会拉取的文件（相对 models/<id>/）
 export const MODEL_FILES = [

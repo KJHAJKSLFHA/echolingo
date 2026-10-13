@@ -4,9 +4,9 @@ import {
   $, $$, el, fmtTime, clamp, escapeHtml, hashStr, debounce,
   toast, download, openDB, idbAll, idbPut, idbDelete,
 } from './util.js';
-import { initLang, setLang, getLang, t, onLangChange } from './i18n.js';
+import { initLang, setLang, getLang, t, onLangChange, nextLang, LANG_SHORT } from './i18n.js';
 import {
-  MODEL_FILES, availableASRModels, modelMeta, resolveASRModel, DEFAULT_ASR_MODEL,
+  MODEL_FILES, availableASRModels, modelMeta, resolveASRModel, DEFAULT_ASR_MODEL, modelLang,
   LS_ASR_CACHED, LS_MT_CACHED, isModelCached, markModelCached,
 } from './models.js';
 import * as DICT from './dict.js';
@@ -18,7 +18,7 @@ import * as MT from './mt.js';
 
 // 与 index.html 里的 window.__ECHOLINGO_VER__ 必须保持一致。
 // 改这两个值时请一起改（sw.js 的 VERSION 也顺手升一级）。
-export const APP_VER = '3.7.0';
+export const APP_VER = '3.8.0';
 
 /* ============================ 状态 ============================ */
 
@@ -174,8 +174,18 @@ async function initModelUI() {
   }
   S.settings.asrModel = S.asrModel;
   saveSettings();
+  applySourceLang();
   ASR.setModel(S.asrModel);
   renderModelOptions();
+}
+
+/** 识别模型决定了音频是什么语言，翻译链要跟着换（en→zh 还是 es→en→zh）。
+ *  必须在装模型**之前**调用：换了语言要重建翻译线程池，
+ *  否则会拿着上一轮的模型去翻这一轮的句子。 */
+function applySourceLang() {
+  const lang = modelLang(S.asrModel);
+  MT.setLang(lang);
+  return lang;
 }
 
 /** 重建模型下拉与说明。选项文案要跟着界面语言走，所以切语言时也要调一次。 */
@@ -299,6 +309,10 @@ async function switchASRModel(id) {
   S.asrModel = id;
   S.settings.asrModel = id;
   saveSettings();
+  // 语言跟着模型走：从英语切到西语时，翻译链要从 en→zh 换成 es→en→zh。
+  // 翻译线程池会在这里被丢弃重建，已经翻好的中文保留不动 —— 换模型本身
+  // 就该重新识别，旧译文留着反而会和新的英文对不上。
+  applySourceLang();
   ASR.setModel(id);
   updateModelNote();
   try {
@@ -392,7 +406,8 @@ if (darkMedia) {
 /* ============================ 界面语言 ============================ */
 
 function setupLangUI() {
-  setText('langLabel', getLang() === 'zh' ? 'EN' : '中');
+  // 按钮上显示的是「按一下会切到哪种语言」，所以用 nextLang
+  setText('langLabel', LANG_SHORT[nextLang(getLang())] || 'EN');
   const sel = $('#setLang');
   if (sel) sel.value = getLang();
   document.body.dataset.dropHint = t('dropHint');
@@ -489,7 +504,7 @@ function bindUI() {
   $('#btnTheme').addEventListener('click', () => {
     setThemePref(resolvedTheme() === 'dark' ? 'light' : 'dark');
   });
-  $('#btnLang').addEventListener('click', () => setLang(getLang() === 'zh' ? 'en' : 'zh'));
+  $('#btnLang').addEventListener('click', () => setLang(nextLang(getLang())));
   $('#themeCards').addEventListener('click', (e) => {
     const b = e.target.closest('[data-theme-opt]');
     if (b) setThemePref(b.dataset.themeOpt);
@@ -2011,6 +2026,9 @@ async function translateAll({ force = false, retry = false } = {}) {
     showProgress(0, t('prog.loadMt'));
     await MT.translateMany(pending.map((c) => c.text), {
       signal: ctrl.signal,
+      // 显式带上源语言：翻译链是按语言选的，依赖「之前调用过 setLang」
+      // 太脆 —— 万一顺序变了就会拿英语链去翻西语，而且不报错、只是译文很怪。
+      from: modelLang(S.asrModel),
       onProgress: (p) => {
         if (p.phase === 'load') {
           showProgress(p.pct ?? 0, p.file

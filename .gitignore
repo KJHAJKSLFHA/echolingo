@@ -37,3 +37,6 @@ desktop/.tools/
 
 # Local Netlify folder
 .netlify
+
+# 测试用的合成音频（由 macOS say 生成，可随时重建）
+bench/*-test.wav

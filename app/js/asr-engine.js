@@ -9,7 +9,7 @@
 // 这里原样转发，历史调用方不受影响。
 
 import { pipeline, env } from '../vendor/transformers.min.js';
-import { DEFAULT_ASR_MODEL, modelsBase } from './models.js';
+import { DEFAULT_ASR_MODEL, modelsBase, modelLang } from './models.js';
 import { SR, segmentAudio, clampSegments } from './segment.js';
 
 export * from './segment.js';
@@ -206,8 +206,12 @@ function textToWords(text, dur) {
  */
 export async function transcribeSegment(samples, { wordTimestamps = true, modelId, threads } = {}) {
   const asr = await loadASR(null, modelId, threads);
-  const genOpts = isMultilingual(loadedId || modelId || DEFAULT_ASR_MODEL)
-    ? { language: 'en', task: 'transcribe' }
+  const activeId = loadedId || modelId || DEFAULT_ASR_MODEL;
+  // 语言由**选中的模型**决定，不能写死 'en'：西语走的是多语言版 whisper，
+  // 必须把 language 传成 'es'，否则模型会拿英语先验去解西语音频，
+  // 结果是一串看起来像英语、实际毫无意义的句子（而且不报错）。
+  const genOpts = isMultilingual(activeId)
+    ? { language: modelLang(activeId), task: 'transcribe' }
     : {};
   const dur = samples.length / SR;
 

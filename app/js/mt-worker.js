@@ -1,20 +1,25 @@
 // 机器翻译 Worker
 //
 // 为什么把它挪出主线程：
-//   1. 翻译是 258 次串行推理，全在主线程跑会把界面按在那里动不了；
+//   1. 翻译是几百次串行推理，全在主线程跑会把界面按在那里动不了；
 //   2. 句子之间彼此独立，几个 Worker 并行翻能直接砍掉大半等待时间。
 //
 // 注意这里是**逐句**推理（batch = 1），不是批处理 —— Marian 系模型对 padding
 // 后的批输入会失控，短句被强制解码到 max_new_tokens，出现整段重复。并行的是
 // 「多条句子」，不是「一个 batch」，所以没有这个问题。
+//
+// ── 模型链 ──
+//   英文内容只需要一个模型（en→zh）。西语没有现成的 es→zh 量化模型，
+//   只能两跳：es→en 再用同一个 en→zh。所以这里接的是一**串**模型，
+//   逐级套下去。链长 > 1 时主线程只会起一个 Worker（每个 Worker 要同时持有
+//   两份权重），代价是吞吐减半 —— 但内存翻倍更难受。
 
 import { pipeline, env } from '../vendor/transformers.min.js';
 
 const MODELS_BASE = new URL('../models/', import.meta.url).pathname;
 const VENDOR_BASE = new URL('../vendor/', import.meta.url).pathname;
-const MODEL_ID = 'opus-mt-en-zh';
 
-let translator = null;
+let translators = [];        // 与 chain 一一对应
 
 function configure(threads) {
   env.allowRemoteModels = false;
@@ -29,28 +34,48 @@ function configure(threads) {
   }
 }
 
+async function loadChain(chain, threads) {
+  configure(threads);
+  const out = [];
+  for (const id of chain) {
+    out.push(await pipeline('translation', id, {
+      dtype: { encoder_model: 'q8', decoder_model_merged: 'q8' },
+      device: 'wasm',
+      progress_callback: (p) => {
+        if (p.status === 'progress' && p.file) {
+          self.postMessage({
+            type: 'progress', model: id, file: p.file,
+            pct: p.total ? (p.loaded / p.total) * 100 : null,
+          });
+        }
+      },
+    }));
+  }
+  return out;
+}
+
 self.onmessage = async (e) => {
   const m = e.data || {};
   try {
     if (m.type === 'load') {
-      if (translator) { self.postMessage({ type: 'ready' }); return; }
-      configure(m.threads || 1);
-      translator = await pipeline('translation', MODEL_ID, {
-        dtype: { encoder_model: 'q8', decoder_model_merged: 'q8' },
-        device: 'wasm',
-        progress_callback: (p) => {
-          if (p.status === 'progress' && p.file) {
-            self.postMessage({ type: 'progress', file: p.file, pct: p.total ? (p.loaded / p.total) * 100 : null });
-          }
-        },
-      });
+      const chain = m.chain || [];
+      if (translators.length && chain.join('>') === m.chainKey) {
+        self.postMessage({ type: 'ready' });
+        return;
+      }
+      translators = await loadChain(chain, m.threads || 1);
       self.postMessage({ type: 'ready' });
       return;
     }
 
     if (m.type === 'translate') {
-      const r = await translator(m.text, { max_new_tokens: m.maxNew });
-      const text = (Array.isArray(r) ? r[0] : r)?.translation_text || '';
+      let text = m.text;
+      // 逐级套：每一级的输出喂给下一级
+      for (const t of translators) {
+        const r = await t(text, { max_new_tokens: m.maxNew });
+        text = (Array.isArray(r) ? r[0] : r)?.translation_text || '';
+        if (!text) break;      // 某一级吐空了就别再往下传，免得产出垃圾
+      }
       self.postMessage({ type: 'done', task: m.task, text });
     }
   } catch (err) {

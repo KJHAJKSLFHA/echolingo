@@ -16,18 +16,49 @@
 
 const MODELS_BASE = new URL('../models/', import.meta.url).pathname;
 const VENDOR_BASE = new URL('../vendor/', import.meta.url).pathname;
-const MODEL_ID = 'opus-mt-en-zh';
+
+/* ---------------- 翻译模型链 ----------------
+   英文内容一个模型就够；西语没有现成的 es→zh 量化模型（HF 上根本不存在），
+   只能两跳：先 es→en，再把结果交给同一个 en→zh。链长 > 1 时主线程只起
+   一个 Worker，因为每个 Worker 要同时持有两份权重 —— 内存翻倍比吞吐减半难受。 */
+export const MT_CHAINS = {
+  en: ['opus-mt-en-zh'],
+  es: ['opus-mt-es-en', 'opus-mt-en-zh'],
+};
+
+let srcLang = 'en';
+/** 设置源语言（由选中的识别模型决定）。换了语言要重建线程池。 */
+export function setLang(lang) {
+  const next = MT_CHAINS[lang] ? lang : 'en';
+  if (next === srcLang) return;
+  srcLang = next;
+  dropWorkers();
+}
+
+export const chainFor = (lang = srcLang) => MT_CHAINS[lang] || MT_CHAINS.en;
+const chainKey = (chain) => chain.join('>');
 
 const WORKER_THREADS = 1;      // 翻译序列短，多线程几乎没收益，算力留给识别
 const TASK_TIMEOUT_MS = 90000;
 
 let workers = [];              // 并行翻译线程
 let poolPromise = null;
-let mainTranslator = null;     // 主线程兜底
+let mainTranslators = [];      // 主线程兜底（也是一串）
 let mainLoading = null;
 
-/** 起几个翻译线程：每个都要独立持有一份 113MB 权重，内存小的机器只起一个 */
+function dropWorkers() {
+  for (const w of workers) { try { w.terminate(); } catch {} }
+  workers = [];
+  poolPromise = null;
+  mainTranslators = [];
+  mainLoading = null;
+  warmPromise = null;
+}
+
+/** 起几个翻译线程：每个都要独立持有一份权重，内存小的机器只起一个。
+ *  模型链多于一级时固定 1 个 —— 否则两份权重 × 两个线程 = 四份，太狠。 */
 function poolSize() {
+  if (chainFor().length > 1) return 1;
   const mem = navigator.deviceMemory || 0;
   const hc = navigator.hardwareConcurrency || 4;
   if (mem && mem <= 4) return 1;
@@ -37,10 +68,12 @@ function poolSize() {
 
 export async function probeMT() {
   const base = MODELS_BASE.endsWith('/') ? MODELS_BASE : MODELS_BASE + '/';
-  const url = `${base}${MODEL_ID}/config.json`;
-  const res = await fetch(url, { method: 'GET', cache: 'force-cache' });
-  if (!res.ok) throw new Error(`本地翻译模型缺失：${url} 返回 ${res.status}`);
-  return MODEL_ID;
+  for (const id of chainFor()) {
+    const url = `${base}${id}/config.json`;
+    const res = await fetch(url, { method: 'GET', cache: 'force-cache' });
+    if (!res.ok) throw new Error(`本地翻译模型缺失：${url} 返回 ${res.status}`);
+  }
+  return chainFor().join(' → ');
 }
 
 // transformers.js 会从本地目录拉这些文件（相对 models/opus-mt-en-zh/）
@@ -68,7 +101,10 @@ let warmPromise = null;
 export function warmupFiles(onProgress) {
   if (warmPromise) return warmPromise;
   const base = MODELS_BASE.endsWith('/') ? MODELS_BASE : MODELS_BASE + '/';
-  const urls = MT_FILES.map((f) => `${base}${MODEL_ID}/${f}`);
+  // 链上每个模型的文件都要预热：西语两跳时只热 en→zh 是不够的
+  const urls = [];
+  for (const id of chainFor()) for (const f of MT_FILES) urls.push(`${base}${id}/${f}`);
+  const key = chainKey(chainFor());
   warmPromise = (async () => {
     let done = 0;
     // 顺序拉而不是并发：目的是「把文件放进缓存」，不是抢时间；
@@ -89,6 +125,7 @@ export function warmupFiles(onProgress) {
       onProgress?.({ done, total: urls.length });
     }
   })();
+  void key;
   return warmPromise;
 }
 
@@ -116,7 +153,8 @@ function spawnWorker(onProgress) {
     const off = () => w.removeEventListener('message', onMsg);
     w.addEventListener('message', onMsg);
     w.addEventListener('error', () => { off(); reject(new Error('翻译线程启动失败')); });
-    w.postMessage({ type: 'load', threads: WORKER_THREADS });
+    const chain = chainFor();
+    w.postMessage({ type: 'load', chain, chainKey: chainKey(chain), threads: WORKER_THREADS });
   });
 }
 
@@ -191,7 +229,7 @@ async function translateParallel(texts, { onProgress, signal }) {
 /* ---------------- 主线程兜底 ---------------- */
 
 async function mainPipeline() {
-  if (mainTranslator) return mainTranslator;
+  if (mainTranslators.length) return mainTranslators;
   if (mainLoading) return mainLoading;
   const { pipeline, env } = await import('../vendor/transformers.min.js');
   env.allowRemoteModels = false;
@@ -204,16 +242,24 @@ async function mainPipeline() {
     env.backends.onnx.wasm.numThreads = 2;
     env.backends.onnx.wasm.proxy = false;
   }
-  mainLoading = pipeline('translation', MODEL_ID, {
-    dtype: { encoder_model: 'q8', decoder_model_merged: 'q8' },
-    device: 'wasm',
-  }).then((t) => { mainTranslator = t; mainLoading = null; return t; })
-    .catch((e) => { mainLoading = null; throw e; });
+  const chain = chainFor();
+  mainLoading = (async () => {
+    const list = [];
+    for (const id of chain) {
+      list.push(await pipeline('translation', id, {
+        dtype: { encoder_model: 'q8', decoder_model_merged: 'q8' },
+        device: 'wasm',
+      }));
+    }
+    mainTranslators = list;
+    mainLoading = null;
+    return list;
+  })().catch((e) => { mainLoading = null; throw e; });
   return mainLoading;
 }
 
 async function translateSerial(texts, { onProgress, signal }) {
-  const mt = await mainPipeline();
+  const chain = await mainPipeline();
   const out = new Array(texts.length).fill('');
   for (let i = 0; i < texts.length; i++) {
     if (signal?.aborted) break;
@@ -221,8 +267,13 @@ async function translateSerial(texts, { onProgress, signal }) {
     if (!input) { out[i] = ''; continue; }
     const maxNew = Math.max(24, Math.min(200, Math.round(18 + input.length * 1.1)));
     try {
-      const r = await mt(input, { max_new_tokens: maxNew });
-      out[i] = tidy((Array.isArray(r) ? r[0] : r)?.translation_text || '');
+      let text = input;
+      for (const t of chain) {
+        const r = await t(text, { max_new_tokens: maxNew });
+        text = (Array.isArray(r) ? r[0] : r)?.translation_text || '';
+        if (!text) break;
+      }
+      out[i] = tidy(text);
     } catch (err) {
       out[i] = '';
     }
@@ -235,14 +286,16 @@ async function translateSerial(texts, { onProgress, signal }) {
 
 /* ---------------- 对外 ---------------- */
 
-export function isMTReady() { return workers.length > 0 || !!mainTranslator; }
+export function isMTReady() { return workers.length > 0 || mainTranslators.length > 0; }
 
 /**
  * 逐句翻译。句子之间彼此独立，所以并行分发到多个线程。
  * @param {string[]} texts
- * @param {{onProgress?:Function, signal?:AbortSignal}} o
+ * @param {{onProgress?:Function, signal?:AbortSignal, from?:string}} o
+ *        from: 源语言（'en' | 'es'），由识别模型决定；不传沿用上一次。
  */
-export async function translateMany(texts, { onProgress, signal } = {}) {
+export async function translateMany(texts, { onProgress, signal, from } = {}) {
+  if (from) setLang(from);
   try {
     await loadMT(onProgress);
   } catch (e) {
