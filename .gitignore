@@ -28,3 +28,6 @@ Thumbs.db
 
 # 本地工具（gh 等），不提交
 desktop/.tools/
+
+# GitHub Pages：不要排除 .nojekyll（它本身就是给 Pages 用的标记文件）
+!.nojekyll
