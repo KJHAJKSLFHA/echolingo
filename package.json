@@ -1,0 +1,66 @@
+{
+  "name": "echolingo",
+  "productName": "EchoLingo",
+  "version": "3.3.0",
+  "private": true,
+  "description": "EchoLingo · 回声英语 — 英语视频精读：自动生成双语字幕、逐词释义与发音、逐词跟读高亮，识别与翻译全部在本机完成。",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "python3 tools/serve.py 8765 --open",
+    "electron": "electron .",
+    "dist": "electron-builder --mac",
+    "dist:dir": "electron-builder --mac --dir"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.echolingo.reader",
+    "productName": "EchoLingo",
+    "asar": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "index.html",
+      "manifest.webmanifest",
+      "css/**/*",
+      "js/**/*",
+      "dict/**/*",
+      "media/**/*",
+      "models/**/*",
+      "vendor/**/*",
+      "server.js",
+      "electron/main.js",
+      "electron/icon.icns",
+      "!bench/**/*",
+      "!tools/**/*",
+      "!electron/smoke.js",
+      "!electron/icon.svg",
+      "!electron/icon.iconset/**/*",
+      "!release/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.education",
+      "icon": "electron/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "EchoLingo ${version}",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    }
+  }
+}

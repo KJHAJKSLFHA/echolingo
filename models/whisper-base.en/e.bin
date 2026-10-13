@@ -1,0 +1,1 @@
+We had to rate limit you, you hit the quota of 100000 resolvers requests per 5 minutes period. Enable "Higher Hub rate limits" in your organization's Network Security settings (https://huggingface.co/organizations/ci-org/settings/network-security) to get higher limits. See https://huggingface.co/docs/hub/rate-limits

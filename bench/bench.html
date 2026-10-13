@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>EchoLingo bench</title></head>
+<body>
+<pre id="out">bench page</pre>
+<script type="module">
+import { pipeline, env } from '../vendor/transformers.min.js';
+import { segmentAudio, MAX_SEG_SEC } from '../js/asr-engine.js';
+
+const MODELS = new URL('../models/', import.meta.url).pathname;
+const VENDOR = new URL('../vendor/', import.meta.url).pathname;
+const SR = 16000;
+
+let asr = null;
+let pcm = null;
+let curModel = null;
+let curThreads = null;
+
+function configure(threads) {
+  env.allowRemoteModels = false;
+  env.allowLocalModels = true;
+  env.useBrowserCache = false;
+  env.useFSCache = false;
+  env.localModelPath = MODELS;
+  env.backends.onnx.wasm.wasmPaths = VENDOR;
+  env.backends.onnx.wasm.numThreads = threads;
+  env.backends.onnx.wasm.proxy = false;
+}
+
+window.env$ = () => ({
+  iso: self.crossOriginIsolated,
+  sab: typeof SharedArrayBuffer !== 'undefined',
+  hc: navigator.hardwareConcurrency,
+  threads: env.backends.onnx.wasm.numThreads,
+  maxSegSec: MAX_SEG_SEC,
+});
+
+/** 解码真实音频；给足长度避免截断 */
+window.decodeReal = async (url) => {
+  const res = await fetch(url);
+  const buf = await res.arrayBuffer();
+  const ctx = new OfflineAudioContext(1, SR * 1200, SR);
+  const ab = await ctx.decodeAudioData(buf);
+  const ch = ab.numberOfChannels;
+  const out = new Float32Array(ab.length);
+  for (let c = 0; c < ch; c++) {
+    const d = ab.getChannelData(c);
+    for (let i = 0; i < ab.length; i++) out[i] += d[i];
+  }
+  if (ch > 1) for (let i = 0; i < out.length; i++) out[i] /= ch;
+  pcm = out;
+  return { sec: +(out.length / SR).toFixed(1), bytes: buf.byteLength };
+};
+
+window.loadModel = async (modelId, threads) => {
+  if (asr && curModel === modelId && curThreads === threads) {
+    return { modelId, threads, ms: 0, cached: true };
+  }
+  configure(threads);
+  asr = null;
+  const t0 = performance.now();
+  asr = await pipeline('automatic-speech-recognition', modelId, {
+    dtype: { encoder_model: 'q8', decoder_model_merged: 'q8' },
+    device: 'wasm',
+  });
+  curModel = modelId; curThreads = threads;
+  return { modelId, threads, ms: Math.round(performance.now() - t0), cached: false };
+};
+
+/** 用项目真实的切段算法，取前 uptoSec 秒 */
+window.planSegs = (uptoSec) => {
+  const n = Math.min(pcm.length, Math.round(uptoSec * SR));
+  const part = pcm.subarray(0, n);
+  return segmentAudio(part).map((s) => ({ start: s.start, end: s.end, sec: +((s.end - s.start) / SR).toFixed(1) }));
+};
+
+window.planStats = (plan, totalSec) => ({
+  n: plan.length,
+  avgSec: +(plan.reduce((a, s) => a + s.sec, 0) / plan.length).toFixed(1),
+  min: Math.min(...plan.map((s) => s.sec)),
+  max: Math.max(...plan.map((s) => s.sec)),
+  真实占用秒: +plan.reduce((a, s) => a + s.sec, 0).toFixed(1),
+  视频秒: totalSec,
+});
+
+/** 按段跑一遍；返回总耗时、逐段明细。首次调用含冷启动，故先热一段 */
+window.runPlan = async (plan, wordTs, { warm = true } = {}) => {
+  if (warm) await asr(pcm.slice(plan[0].start, plan[0].end), { return_timestamps: wordTs ? 'word' : true, force_full_sequences: false });
+  const segs = [];
+  let words = 0;
+  const t0 = performance.now();
+  for (const s of plan) {
+    const slice = pcm.slice(s.start, s.end);
+    const t = performance.now();
+    const out = await asr(slice, {
+      return_timestamps: wordTs ? 'word' : true,
+      force_full_sequences: false,
+    });
+    const ms = performance.now() - t;
+    const n = (out.chunks || []).filter((c) => String(c.text || '').trim()).length;
+    words += n;
+    segs.push({ sec: s.sec, ms: Math.round(ms), rtf: +(ms / 1000 / s.sec).toFixed(3), words: n });
+  }
+  const totalMs = Math.round(performance.now() - t0);
+  const audioSec = plan.reduce((a, s) => a + s.sec, 0);
+  return {
+    n: plan.length,
+    wordTs: !!wordTs,
+    totalMs,
+    audioSec: +audioSec.toFixed(1),
+    words,
+    RTF: +(totalMs / 1000 / audioSec).toFixed(3),
+    // 把「每段固定开销」暴露出来：耗时对段长的回归
+    avgMsPerSeg: Math.round(totalMs / plan.length),
+    segs: segs.map((s) => `${s.sec}s:${s.ms}ms(${s.words}w)`).join(' '),
+  };
+};
+
+window.__ready = true;
+document.getElementById('out').textContent = 'ready';
+</script>
+</body>
+</html>

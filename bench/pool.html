@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>EchoLingo worker pool bench</title></head>
+<body>
+<pre id="out">pool bench</pre>
+<script type="module">
+import { segmentAudio } from '../js/asr-engine.js';
+
+const SR = 16000;
+let pcm = null;
+
+window.decodeReal = async (url) => {
+  const res = await fetch(url);
+  const buf = await res.arrayBuffer();
+  const ctx = new OfflineAudioContext(1, SR * 1200, SR);
+  const ab = await ctx.decodeAudioData(buf);
+  const ch = ab.numberOfChannels;
+  const out = new Float32Array(ab.length);
+  for (let c = 0; c < ch; c++) {
+    const d = ab.getChannelData(c);
+    for (let i = 0; i < ab.length; i++) out[i] += d[i];
+  }
+  if (ch > 1) for (let i = 0; i < out.length; i++) out[i] /= ch;
+  pcm = out;
+  return { sec: +(out.length / SR).toFixed(1) };
+};
+
+window.planSegs = (uptoSec) => {
+  const n = Math.min(pcm.length, Math.round(uptoSec * SR));
+  return segmentAudio(pcm.subarray(0, n)).map((s) => ({
+    start: s.start, end: s.end, sec: +((s.end - s.start) / SR).toFixed(1),
+  }));
+};
+
+/** 起 n 个 Worker，各自一份 ORT session，按任务池并行跑完整 plan */
+window.poolBench = async ({ n, modelId, threads, plan }) => {
+  const spawn = () => new Promise((resolve, reject) => {
+    const w = new Worker('./pool-worker.js', { type: 'module' });
+    const t0 = performance.now();
+    w.addEventListener('message', function h(ev) {
+      if (ev.data.type === 'ready') {
+        w.removeEventListener('message', h);
+        resolve({ w, loadMs: Math.round(performance.now() - t0) });
+      } else if (ev.data.type === 'error') {
+        w.removeEventListener('message', h);
+        reject(new Error(ev.data.message));
+      }
+    });
+    w.addEventListener('error', (e) => reject(new Error(e.message || 'worker 启动失败')));
+    w.postMessage({ type: 'load', modelId, threads });
+  });
+
+  const loadT0 = performance.now();
+  const pool = await Promise.all(Array.from({ length: n }, spawn));
+  const loadWallMs = Math.round(performance.now() - loadT0);
+
+  const queue = plan.map((s, i) => ({ i, start: s.start, end: s.end, sec: s.sec }));
+  const results = [];
+  const runT0 = performance.now();
+  await Promise.all(pool.map(async (p) => {
+    while (queue.length) {
+      const task = queue.shift();
+      const slice = pcm.slice(task.start, task.end);
+      const r = await new Promise((resolve, reject) => {
+        const h = (ev) => {
+          if (ev.data.task !== task.i) return;
+          p.w.removeEventListener('message', h);
+          ev.data.type === 'error' ? reject(new Error(ev.data.message)) : resolve(ev.data);
+        };
+        p.w.addEventListener('message', h);
+        p.w.postMessage({ type: 'run', samples: slice, task: task.i }, [slice.buffer]);
+      });
+      results.push({ ...task, ...r });
+    }
+  }));
+  const runWallMs = Math.round(performance.now() - runT0);
+  pool.forEach((p) => p.w.terminate());
+
+  const audioSec = plan.reduce((a, s) => a + s.sec, 0);
+  const sumSegMs = results.reduce((a, r) => a + r.ms, 0);
+  return {
+    workers: n, threadsPerWorker: threads, modelId,
+    loadWallMs, runWallMs, totalMs: loadWallMs + runWallMs,
+    audioSec: +audioSec.toFixed(1),
+    wallRTF: +(runWallMs / 1000 / audioSec).toFixed(3),
+    sumSegMs,
+    cpu并行度: +(sumSegMs / runWallMs).toFixed(2),
+    workerLoadMs: pool.map((p) => p.loadMs),
+    tasks: results.sort((a, b) => a.i - b.i).map((r) => `${r.sec}s:${r.ms}ms(${r.words}w)`).join(' '),
+  };
+};
+
+window.__ready = true;
+document.getElementById('out').textContent = 'ready';
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
+  <!-- 声波装饰（右侧） -->
+  <g stroke="#ffffff" stroke-width="28" stroke-linecap="round" opacity="0.32" fill="none">
+    <path d="M680 350 v324"/>
+    <path d="M760 300 v424"/>
+    <path d="M840 260 v504"/>
+  </g>
+  <!-- EL 主标 -->
+  <text x="360" y="596" font-family="Helvetica, Arial, sans-serif" font-size="360" font-weight="700" fill="#ffffff" text-anchor="middle" letter-spacing="-8">EL</text>
+  <!-- 底部回音点 -->
+  <circle cx="360" cy="720" r="20" fill="#ffffff" opacity="0.85"/>
+  <circle cx="430" cy="720" r="20" fill="#ffffff" opacity="0.55"/>
+  <circle cx="500" cy="720" r="20" fill="#ffffff" opacity="0.3"/>
+</svg>

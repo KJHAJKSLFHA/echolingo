@@ -1,0 +1,30 @@
+# ============================ 构建产物 ============================
+# 打包结果，随时可以用 desktop/build.mjs 重新生成
+dist/
+release/
+
+# ============================ 依赖与缓存 ============================
+# 都可以重新下载/生成，而且体积大。
+# ⚠️ desktop/.electron-cache 里那个 zip 有 124MB，**超过 GitHub 单文件 100MB 上限**，
+#    一旦提交上去，push 会被直接拒绝，还得 rewrite 历史才能清掉。务必排除。
+node_modules/
+.pnpm-store/
+.electron-cache/
+desktop/.electron-cache/
+desktop/.stage/
+
+# ============================ 本地测试残留 ============================
+# 桌面版测试时用的浏览器 profile（收藏夹、Service Worker 缓存等）
+.udd*/
+.udd
+shots/tmp-*
+
+# 测试音频：由 media/demo.m4a 重复拼接生成，几秒钟就能重建
+bench/long.wav
+
+# ============================ 系统 ============================
+.DS_Store
+Thumbs.db
+
+# 本地工具（gh 等），不提交
+desktop/.tools/

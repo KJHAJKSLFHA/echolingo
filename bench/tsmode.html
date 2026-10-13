@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>whisper timestamp-mode test</title></head>
+<body>
+<pre id="out">loading</pre>
+<script type="module">
+// Standalone: does NOT touch bench/bench.html (another session is editing it).
+import { pipeline, env } from '../vendor/transformers.min.js';
+
+const MODELS = new URL('../models/', import.meta.url).pathname;
+const VENDOR = new URL('../vendor/', import.meta.url).pathname;
+const SR = 16000;
+
+let asr = null, pcm = null;
+
+function configure(threads) {
+  env.allowRemoteModels = false;
+  env.allowLocalModels = true;
+  env.useBrowserCache = false;
+  env.useFSCache = false;
+  env.localModelPath = MODELS;
+  env.backends.onnx.wasm.wasmPaths = VENDOR;
+  env.backends.onnx.wasm.numThreads = threads;
+  env.backends.onnx.wasm.proxy = false;
+}
+
+const desc = (o) => ({
+  text: String(o.text || ''),
+  chars: String(o.text || '').length,
+  chunks: (o.chunks || []).length,
+  words: (o.chunks || []).filter((c) => /[A-Za-z]/.test(String(c.text || ''))).length,
+});
+
+window.run = async ({ threads = 6, model = 'whisper-base.en', slices = [[30, 28]] } = {}) => {
+  const res = await fetch('/bench/long.wav');
+  const buf = await res.arrayBuffer();
+  const ctx = new OfflineAudioContext(1, SR * 400, SR);
+  const ab = await ctx.decodeAudioData(buf);
+  pcm = ab.getChannelData(0);
+
+  configure(threads);
+  const t0 = performance.now();
+  asr = await pipeline('automatic-speech-recognition', model, {
+    dtype: { encoder_model: 'q8', decoder_model_merged: 'q8' },
+    device: 'wasm',
+  });
+  const out = { model, threads, iso: self.crossOriginIsolated, loadMs: Math.round(performance.now() - t0), modes: {} };
+
+  const call = async (startSec, durSec, opts) => {
+    const slice = pcm.slice(Math.round(startSec * SR), Math.round((startSec + durSec) * SR));
+    const t = performance.now();
+    let o, err = null;
+    try { o = await asr(slice, opts); } catch (e) { err = String(e.message || e); }
+    const ms = Math.round(performance.now() - t);
+    return { ms, err, ...(o ? desc(o) : {}) };
+  };
+
+  // warm up (first call always pays jit/wasm warm-up)
+  await call(slices[0][0], slices[0][1], { return_timestamps: 'word', force_full_sequences: false });
+
+  const modes = {
+    word: { return_timestamps: 'word', force_full_sequences: false },
+    segTrue: { return_timestamps: true, force_full_sequences: false },
+    none: { return_timestamps: false },
+  };
+  for (const [name, opts] of Object.entries(modes)) {
+    out.modes[name] = [];
+    for (const [s, d] of slices) out.modes[name].push({ dur: d, ...(await call(s, d, opts)) });
+  }
+
+  // timing stability for the two viable modes
+  for (const name of ['word', 'none']) {
+    const runs = [];
+    for (const [s, d] of slices) runs.push((await call(s, d, modes[name])).ms);
+    runs.sort((a, b) => a - b);
+    out[`median_${name}`] = runs[Math.floor(runs.length / 2)];
+  }
+  return out;
+};
+
+window.__ready = true;
+document.getElementById('out').textContent = 'ready';
+</script>
+</body>
+</html>

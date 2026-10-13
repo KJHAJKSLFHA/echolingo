@@ -1,0 +1,12 @@
+{
+  "name": "EchoLingo · 回声英语",
+  "short_name": "EchoLingo",
+  "description": "完全离线的英语视频精读工具：本地语音识别、双语对照、逐词释义与发音、句子朗读与收藏。",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f7f9",
+  "theme_color": "#1f6feb",
+  "lang": "zh-CN",
+  "icons": []
+}
