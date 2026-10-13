@@ -40,3 +40,6 @@ desktop/.tools/
 
 # 测试用的合成音频（由 macOS say 生成，可随时重建）
 bench/*-test.wav
+
+# 三语首页截图（由 bench/shot-site.mjs 随时重生成，4MB，不入库）
+shots/site-i18n/

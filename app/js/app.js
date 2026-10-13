@@ -18,7 +18,7 @@ import * as MT from './mt.js';
 
 // 与 index.html 里的 window.__ECHOLINGO_VER__ 必须保持一致。
 // 改这两个值时请一起改（sw.js 的 VERSION 也顺手升一级）。
-export const APP_VER = '3.8.0';
+export const APP_VER = '3.9.0';
 
 /* ============================ 状态 ============================ */
 
