@@ -13,7 +13,7 @@
 <script>
 // 版本标记：app.js 会比对它，一旦发现 HTML 与 JS 来自不同版本就重新加载。
 // 这是「Service Worker 缓存了新版 JS 却给了旧 HTML」这类混搭的兜底保险。
-window.__ECHOLINGO_VER__ = '3.10.0';
+window.__ECHOLINGO_VER__ = '3.11.0';
 </script>
 <script>
 // 在首屏绘制前定好主题，避免出现"白闪一下再变黑"
@@ -365,12 +365,13 @@ window.__ECHOLINGO_VER__ = '3.10.0';
         <label class="chk"><input type="checkbox" id="chkMaskAuto" checked> <span data-i18n="set.mask.auto">自动定位字幕位置</span></label>
         <div class="submask-range">
           <label><span data-i18n="set.mask.top">上边界</span>
-            <input type="range" id="setMaskTop" min="40" max="99" step="1" value="90"></label>
+            <input type="range" id="setMaskTop" min="5" max="97" step="1" value="90"></label>
           <label><span data-i18n="set.mask.bottom">下边界</span>
-            <input type="range" id="setMaskBottom" min="41" max="100" step="1" value="99"></label>
+            <input type="range" id="setMaskBottom" min="8" max="100" step="1" value="99"></label>
         </div>
         <p class="muted" data-i18n="set.mask.rangeNote">边界是相对画面高度的百分比。自动定位不准时，直接把上/下边界拖到字幕刚好被盖住的位置。</p>
         <div class="set-btns">
+          <button class="btn btn-sm" id="btnMaskAdjust" data-i18n="set.mask.adjust">在画面上调整位置</button>
           <button class="btn btn-sm" id="btnMaskDetect" data-i18n="set.mask.detect">重新自动定位</button>
           <button class="btn btn-sm" id="btnMaskReset" data-i18n="set.mask.reset">恢复默认位置</button>
         </div>

@@ -18,7 +18,7 @@ import * as MT from './mt.js';
 
 // 与 index.html 里的 window.__ECHOLINGO_VER__ 必须保持一致。
 // 改这两个值时请一起改（sw.js 的 VERSION 也顺手升一级）。
-export const APP_VER = '3.10.0';
+export const APP_VER = '3.11.0';
 
 /* ============================ 状态 ============================ */
 
@@ -871,6 +871,7 @@ const maskGrabCanvas = document.createElement('canvas');
 let maskAutoDone = false;      // 当前这条视频是否已经自动校正过位置
 let maskLiveStop = null;       // 停掉「播放中采样」的回调
 let maskSeeking = false;       // 整片扫描是否进行中
+let maskEditing = false;       // 是否正在「在画面上调整位置」
 
 const maskChipText = () => t('mask.chip');
 
@@ -879,7 +880,7 @@ function initMask() {
   const video = $('#player');
   if (!wrap || !video) return;
 
-  mask = SUBMASK.createMask({ wrap, video });
+  mask = SUBMASK.createMask({ wrap, video, onBand: onMaskBand });
   maskDetector = SUBMASK.createBandDetector();
 
   // 播放器栏里的开关。沿用 .pb-btn + 已有的 .on 激活态，风格自动一致。
@@ -898,10 +899,17 @@ function initMask() {
   window.addEventListener('keydown', (e) => { if (e.key === 'Alt' && !e.repeat) mask?.peek(true); });
   window.addEventListener('keyup', (e) => { if (e.key === 'Alt') mask?.peek(false); });
   window.addEventListener('blur', () => mask?.peek(false));
+  // Esc 退出「在画面上调整位置」
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && maskEditing) { e.preventDefault(); setMaskAdjust(false); }
+  });
 
   bindMaskSettingsUI();
   onLangChange(() => {
     mask?.setChipText(maskChipText());
+    mask?.setEditHint(t('set.mask.adjustHint'));
+    mask?.setDoneLabel(t('set.mask.adjustDone'));
+    refreshMaskAdjustBtn();
     const b = $('#btnMask');
     if (b) b.title = t('mask.toggle');
   });
@@ -940,7 +948,67 @@ function toggleMask() {
     if (m.auto) startMaskLiveDetect();
   } else {
     stopMaskLiveDetect();
+    if (maskEditing) setMaskAdjust(false, { quiet: true });
   }
+}
+
+/* ---- 在画面上拖动调整位置 ---- */
+
+/** 设置面板里那颗按钮跟着编辑态走 */
+function refreshMaskAdjustBtn() {
+  const b = $('#btnMaskAdjust');
+  if (!b) return;
+  b.classList.toggle('on', maskEditing);
+  b.textContent = t(maskEditing ? 'set.mask.adjustDone' : 'set.mask.adjust');
+}
+
+/**
+ * 进出「在画面上调整位置」。
+ * 开启时会顺手把遮罩打开、把自动定位关掉 —— 手动摆过之后就别再被自动结果覆盖。
+ */
+function setMaskAdjust(on, { quiet = false } = {}) {
+  const m = S.settings.mask;
+  if (on && !S.file) { toast(t('toast.maskNoVideo')); return; }
+  if (!!on === maskEditing) return;
+
+  maskEditing = !!on;
+  if (maskEditing) {
+    m.enabled = true;
+    m.auto = false;
+    maskAutoDone = true;        // 手动定位优先，别再让采样结果盖掉
+    stopMaskLiveDetect();
+    applyMaskState();
+    mask?.setEditing(true);
+    mask?.setEditHint(t('set.mask.adjustHint'));
+    mask?.setDoneLabel(t('set.mask.adjustDone'));
+    mask?.reposition();
+    closeDrawers();             // 设置面板的蒙层会挡住画面，必须让开
+    if (!quiet) toast(t('toast.maskAdjustOn'));
+  } else {
+    mask?.setEditing(false);
+    mask?.setChipText(maskChipText());
+    saveSettings();
+    if (!quiet) toast(t('toast.maskAdjusted'));
+  }
+  refreshMaskAdjustBtn();
+}
+
+/** 遮罩在画面上被拖动时回调：拖动中只更新滑杆，松手才落盘 */
+function onMaskBand(ev) {
+  if (!ev) return;
+  if (ev.phase === 'done') { setMaskAdjust(false); return; }   // 画面上的「完成」按钮
+  const m = S.settings.mask;
+  m.topRatio = ev.topRatio;
+  m.bottomRatio = ev.bottomRatio;
+  if (ev.phase !== 'end') {
+    const a = $('#setMaskTop'), b = $('#setMaskBottom');
+    if (a) a.value = Math.round(m.topRatio * 100);
+    if (b) b.value = Math.round(m.bottomRatio * 100);
+    return;
+  }
+  m.auto = false;
+  applyMaskState();
+  mask?.setChipText(maskChipText());
 }
 
 function stopMaskLiveDetect() { maskLiveStop?.(); maskLiveStop = null; }
@@ -1056,7 +1124,11 @@ function bindMaskSettingsUI() {
   on('#chkMask', 'change', (e) => {
     S.settings.mask.enabled = e.target.checked;
     applyMaskState();
-    if (!e.target.checked) { stopMaskLiveDetect(); return; }
+    if (!e.target.checked) {
+      stopMaskLiveDetect();
+      if (maskEditing) setMaskAdjust(false, { quiet: true });
+      return;
+    }
     if (!S.file) { toast(t('toast.maskNoVideo')); return; }
     if (S.settings.mask.auto) startMaskLiveDetect();
   });
@@ -1069,15 +1141,18 @@ function bindMaskSettingsUI() {
   });
   // 手动拖边界就说明用户不信任自动定位了，顺手把自动关掉
   on('#setMaskTop', 'input', (e) => {
-    S.settings.mask.topRatio = clamp(+e.target.value / 100, 0.4, 0.99);
-    S.settings.mask.auto = false;
+    const m = S.settings.mask;
+    m.topRatio = clamp(+e.target.value / 100, 0.05, Math.min(0.97, m.bottomRatio - 0.02));
+    m.auto = false;
     applyMaskState();
   });
   on('#setMaskBottom', 'input', (e) => {
-    S.settings.mask.bottomRatio = clamp(+e.target.value / 100, 0.41, 1);
-    S.settings.mask.auto = false;
+    const m = S.settings.mask;
+    m.bottomRatio = clamp(+e.target.value / 100, Math.max(0.08, m.topRatio + 0.02), 1);
+    m.auto = false;
     applyMaskState();
   });
+  on('#btnMaskAdjust', 'click', () => setMaskAdjust(!maskEditing));
   on('#btnMaskDetect', 'click', () => runMaskSeekScan());
   on('#btnMaskReset', 'click', () => {
     Object.assign(S.settings.mask, {
@@ -1095,6 +1170,7 @@ function bindMaskSettingsUI() {
 function resetMaskForNewVideo() {
   maskAutoDone = false;
   stopMaskLiveDetect();
+  if (maskEditing) setMaskAdjust(false, { quiet: true });   // 换了视频就别停在编辑态
   maskDetector?.reset();
   mask?.reposition();
   if (!S.settings.mask.enabled || !S.settings.mask.auto) return;

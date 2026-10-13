@@ -462,6 +462,8 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; }
 .field select { padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--panel); }
 .field input[type=range] { accent-color: var(--brand); }
 .set-btns { display: flex; gap: 7px; flex-wrap: wrap; }
+/* 设置面板里「已经开着」的按钮（比如正在画面上调整遮罩位置） */
+.set-btns .btn.on { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
 
 /* 主题选择卡 */
 .theme-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
@@ -587,6 +589,51 @@ body.dragover::after {
   animation: submask-spin .7s linear infinite;
 }
 @keyframes submask-spin { to { transform: rotate(360deg); } }
+
+/* 「在画面上调整位置」：虚线框 + 上下两条抓手
+   整层不吃事件（否则挡住双击全屏），只有框和抓手自己 pointer-events: auto */
+.submask-edit { position: absolute; inset: 0; z-index: 8; pointer-events: none; }
+.submask-edit[hidden] { display: none; }
+
+.submask-edit-box {
+  position: absolute; pointer-events: auto; cursor: grab; touch-action: none;
+  border: 1.5px dashed rgba(255,255,255,.92); border-radius: 8px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.45), inset 0 0 0 1px rgba(0,0,0,.22);
+}
+.submask-edit-box:active { cursor: grabbing; }
+
+.submask-edit-grip {
+  position: absolute; left: 50%; width: 86px; height: 10px; margin-left: -43px;
+  pointer-events: auto; cursor: ns-resize; touch-action: none;
+  border-radius: 999px; background: rgba(255,255,255,.95);
+  box-shadow: 0 1px 3px rgba(0,0,0,.5);
+}
+/* 抓手中间那道小横杠，让人一眼看出是握把而不是装饰 */
+.submask-edit-grip::after {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 34px; height: 2px; margin: -1px 0 0 -17px;
+  border-radius: 2px; background: rgba(18,22,30,.55);
+}
+.submask-edit-grip.top { top: -5px; }
+.submask-edit-grip.bottom { bottom: -5px; }
+
+.submask-edit-hint {
+  position: absolute; pointer-events: none; white-space: nowrap;
+  padding: 3px 8px; border-radius: 6px; font-size: 12px;
+  color: #e8eefc; background: rgba(12,15,20,.78);
+  border: 1px solid rgba(255,255,255,.12);
+}
+
+/* 拖完的出口：钉在画面右上角，不用再开设置面板 */
+.submask-edit-done {
+  position: absolute; top: 10px; right: 10px; pointer-events: auto;
+  padding: 6px 14px; border-radius: 999px; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600; line-height: 1.4;
+  color: #fff; background: var(--brand);
+  border: 1px solid rgba(255,255,255,.28);
+  box-shadow: 0 2px 8px rgba(0,0,0,.42);
+}
+.submask-edit-done:hover { filter: brightness(1.08); }
 
 /* 设置面板里的一行两个滑块 */
 .submask-range { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
