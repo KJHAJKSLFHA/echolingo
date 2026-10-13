@@ -1,7 +1,7 @@
 {
-  "name": "EchoLingo · 回声英语",
+  "name": "EchoLingo · 回声语言",
   "short_name": "EchoLingo",
-  "description": "完全离线的英语视频精读工具：本地语音识别、双语对照、逐词释义与发音、句子朗读与收藏。",
+  "description": "完全离线的英语/西语视频精读工具：本地语音识别、原文与英中三语对照、逐词释义与发音、句子朗读与收藏。",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

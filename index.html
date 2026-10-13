@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>EchoLingo · 回声英语</title>
-<meta name="description" content="英语视频精读工具：自动生成双语字幕、逐词释义、画面字幕遮罩。识别与翻译全部在本机完成。">
+<title>EchoLingo · 回声语言</title>
+<meta name="description" content="英语与西语视频精读工具：自动生成原文/英/中三语字幕、逐词释义、画面字幕遮罩。识别与翻译全部在本机完成。">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#1f6feb">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f6feb'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' fill='white' text-anchor='middle'%3EEL%3C/text%3E%3C/svg%3E">
@@ -179,7 +179,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: cent
   <div class="wrap nav">
     <div class="logo">
       <span class="mark">EL</span>
-      <span>EchoLingo<span class="sub" data-i18n="logo.sub">回声英语</span></span>
+      <span>EchoLingo<span class="sub" data-i18n="logo.sub">回声语言</span></span>
     </div>
     <nav class="nav-links">
       <a href="#features" data-i18n="nav.features">功能</a>
@@ -200,9 +200,9 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: cent
 
 <div class="hero wrap">
   <div class="badge"><span class="dot"></span><span data-i18n="hero.badge">识别与翻译 100% 在本机完成 · 断网可用</span></div>
-  <h1 data-i18n-html="hero.h1">看英语视频，<span class="hl">不用再盯着字幕</span></h1>
+  <h1 data-i18n-html="hero.h1">看英语或西语视频，<span class="hl">不用再盯着字幕</span></h1>
   <p class="lede" data-i18n-html="hero.lede">
-    导入一段英语视频，自动识别每一句话，右侧英中对照、播放到哪个词哪个词就变浅绿；
+    导入一段英语或西班牙语视频，自动识别每一句话，右侧原文与中文对照、播放到哪个词哪个词就变浅绿；
     点任意单词查释义与发音，整句可朗读可收藏。识别与翻译都在你自己的浏览器里跑，<strong>视频不出本机</strong>。
   </p>
   <div class="cta">
@@ -221,7 +221,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: cent
   <div class="wrap">
     <div class="sec-head">
       <h2 data-i18n="feat.title">它解决的三个具体问题</h2>
-      <p data-i18n="feat.sub">不是又一个「播放器 + 字幕」，针对的是精读英语视频时真正卡住的地方。</p>
+      <p data-i18n="feat.sub">不是又一个「播放器 + 字幕」，针对的是精读外语视频时真正卡住的地方。目前支持英语与西班牙语，界面有中文 / English / Español 三套。</p>
     </div>
     <div class="grid grid-3">
       <div class="card problem">
@@ -392,7 +392,7 @@ open ../dist/EchoLingo.app</pre>
 
 <footer>
   <div class="wrap">
-    <span>EchoLingo · <span data-i18n="logo.sub">回声英语</span></span>
+    <span>EchoLingo · <span data-i18n="logo.sub">回声语言</span></span>
     <span data-i18n="ft.license">MIT License</span>
     <a href="https://github.com/KJHAJKSLFHA/echolingo">GitHub</a>
     <a href="app/" data-i18n="ft.open">打开工具</a>
@@ -407,9 +407,9 @@ open ../dist/EchoLingo.app</pre>
    三份的 key 必须完全一致，用 tools/check-site-i18n.mjs 校验，别手工比对。 */
 var SITE_I18N = {
   zh: {
-    'page.title': 'EchoLingo · 回声英语 — 英语视频精读，全部在本机完成',
-    'page.desc': '导入英语视频，自动识别每一句话，右侧英中对照、逐词跟读高亮、点词查释义。识别与翻译全部在你的浏览器里跑，视频不出本机，断网可用。还能把画面里烧录的字幕就地模糊掉，逼自己先听。',
-    'logo.sub': '回声英语',
+    'page.title': 'EchoLingo · 回声语言 — 英语与西语视频精读，全部在本机完成',
+    'page.desc': '导入英语或西语视频，自动识别每一句话，右侧原文与中文对照、逐词跟读高亮、点词查释义。识别与翻译全部在你的浏览器里跑，视频不出本机，断网可用。还能把画面里烧录的字幕就地模糊掉，逼自己先听。',
+    'logo.sub': '回声语言',
     'nav.features': '功能', 'nav.screens': '截图', 'nav.offline': '离线', 'nav.mac': 'macOS 版', 'nav.open': '打开工具',
     'hero.badge': '英语 / 西班牙语 · 识别与翻译 100% 在本机完成 · 断网可用',
     'hero.h1': '看英语或西语视频，<span class="hl">不用再盯着字幕</span>',
@@ -458,9 +458,9 @@ var SITE_I18N = {
   },
 
   en: {
-    'page.title': 'EchoLingo — close-read English videos, entirely on your machine',
-    'page.desc': 'Drop in an English video and every sentence is transcribed automatically. Bilingual subtitles, word-by-word highlighting, click any word for its meaning. Recognition and translation run in your browser, so your video never leaves your machine. Burned-in subtitles can be blurred in place so you actually listen.',
-    'logo.sub': 'English',
+    'page.title': 'EchoLingo — close-read English and Spanish videos, entirely on your machine',
+    'page.desc': 'Drop in an English or Spanish video and every sentence is transcribed automatically. Bilingual subtitles, word-by-word highlighting, click any word for its meaning. Recognition and translation run in your browser, so your video never leaves your machine. Burned-in subtitles can be blurred in place so you actually listen.',
+    'logo.sub': 'Reader',
     'nav.features': 'Features', 'nav.screens': 'Screenshots', 'nav.offline': 'Offline', 'nav.mac': 'macOS app', 'nav.open': 'Open the tool',
     'hero.badge': 'English & Spanish · recognition and translation run 100% on your machine · works offline',
     'hero.h1': 'Watch English or Spanish videos, <span class="hl">without staring at subtitles</span>',
@@ -528,7 +528,7 @@ var SITE_I18N = {
   es: {
     'page.title': 'EchoLingo — lee a fondo vídeos en inglés o español, todo en tu equipo',
     'page.desc': 'Carga un vídeo en inglés o español y cada frase se transcribe automáticamente. Subtítulos bilingües, resaltado palabra por palabra y definición al hacer clic en cualquier palabra. El reconocimiento y la traducción se ejecutan en tu navegador, así que el vídeo nunca sale de tu equipo. Los subtítulos incrustados en la imagen se pueden difuminar para que de verdad escuches.',
-    'logo.sub': 'Inglés',
+    'logo.sub': 'Lector',
     'nav.features': 'Funciones', 'nav.screens': 'Capturas', 'nav.offline': 'Sin conexión', 'nav.mac': 'App para macOS', 'nav.open': 'Abrir la herramienta',
     'hero.badge': 'Inglés y español · reconocimiento y traducción 100% en tu equipo · funciona sin conexión',
     'hero.h1': 'Mira vídeos en inglés o español, <span class="hl">sin quedarte mirando los subtítulos</span>',

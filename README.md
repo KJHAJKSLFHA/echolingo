@@ -1,4 +1,4 @@
-# EchoLingo · 回声英语
+# EchoLingo · 回声语言
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Offline](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF-100%25-success)

@@ -3,7 +3,7 @@
   "productName": "EchoLingo",
   "version": "3.3.0",
   "private": true,
-  "description": "EchoLingo · 回声英语 — 英语视频精读：自动生成双语字幕、逐词释义与发音、逐词跟读高亮，识别与翻译全部在本机完成。",
+  "description": "EchoLingo · 回声语言 — 英语/西语视频精读：自动生成原文与英中三语字幕、逐词释义与发音、逐词跟读高亮，识别与翻译全部在本机完成。",
   "main": "electron/main.js",
   "scripts": {
     "start": "node server.js",

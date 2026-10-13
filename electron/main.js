@@ -30,7 +30,7 @@ async function createWindow() {
     height: 820,
     minWidth: 960,
     minHeight: 640,
-    title: 'EchoLingo · 回声英语',
+    title: 'EchoLingo · 回声语言',
     backgroundColor: '#ffffff',
     show: false,               // 等服务就绪再显示，避免白屏一闪
     webPreferences: {

@@ -203,7 +203,7 @@ async function main() {
     name: 'echolingo',
     productName: PRODUCT,
     version,
-    description: 'EchoLingo 回声英语 — 纯离线英语视频精读',
+    description: 'EchoLingo 回声语言 — 纯离线英语/西语视频精读',
     main: 'main.js',
     license: 'MIT',
   }, null, 2) + '\n');
