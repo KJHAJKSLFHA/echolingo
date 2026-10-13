@@ -2,11 +2,14 @@
 
 import { hasCJK, cjkRatio } from './util.js';
 
+// 词边界必须用 Unicode 字母类：旧的 [A-Za-z] 会把西语 "Cómo" 切成 "C"+"mo"、
+// "niño" 切成 "ni"+"o"，导致重音/ñ 单词点不出来、逐词时间戳错位。
+// \p{M} 让组合重音符跟随其基字母，避免 NFD 编码被拆开。
 export function tokenize(text) {
-  return String(text || '').match(/[A-Za-z][A-Za-z''\-]*|[^A-Za-z]+/g) || [];
+  return String(text || '').match(/[\p{L}][\p{L}\p{M}\u2019'\-]*|[^\p{L}]+/gu) || [];
 }
 
-export const isWordToken = (t) => /^[A-Za-z]/.test(t);
+export const isWordToken = (t) => /^\p{L}/u.test(t);
 
 /* ---------------- 时间码 ---------------- */
 

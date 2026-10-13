@@ -39,7 +39,8 @@ export function normalizeWord(raw) {
   return String(raw || '')
     .toLowerCase()
     .replace(/[\u2018\u2019]/g, "'")
-    .replace(/^[^a-z]+|[^a-z'\-]+$/g, '');
+    // Unicode 版：保留西语重音字母（caminé 不再被削成 camin）。英语行为不变。
+    .replace(/^[^\p{L}]+|[^\p{L}'\-]+$/gu, '');
 }
 
 // 常见屈折变化的兜底还原规则（词典 lemma 表未覆盖时使用）
