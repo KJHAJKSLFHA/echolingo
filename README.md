@@ -1,22 +1,61 @@
 # EchoLingo · 回声英语
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Offline](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF-100%25-success)
+![Platform](https://img.shields.io/badge/macOS-Apple%20Silicon-black?logo=apple)
+![Electron](https://img.shields.io/badge/Electron-44-4788C7?logo=electron)
+![No server](https://img.shields.io/badge/%E4%B8%8A%E4%BC%A0-%E6%B2%A1%E6%9C%89%E4%BB%BB%E4%BD%95%E6%9C%8D%E5%8A%A1%E5%99%A8-lightgrey)
+
 英语视频精读工具。导入一段英语视频，自动识别每一句话，右侧显示英中对照，**播放到哪个词，那个词就变浅绿**，像卡拉 OK 一样依次推进；点击任意单词查看释义与发音，整句可以朗读，句子和单词都能收藏。
 
 界面支持**简体中文 / English 双语切换**，配色提供**浅色 / 深色 / 跟随系统**三档。识别与翻译全部在浏览器本机完成，**视频不出本机，断网可用**。
 
 ---
 
-## 三种打开方式
+## 界面
 
-**① 在线直接用**（推荐给只想用的人）
+**画面烧录字幕遮罩** —— 很多英语视频把字幕直接烧进了画面，盯着它看其实是在做阅读理解。开启后这段字幕被就地模糊，画面其余部分完全不动；按住 `Alt` 临时揭开核对原文。
+
+| 效果：左=关闭 · 右=开启 | 设置面板 |
+| --- | --- |
+| ![遮罩效果](shots/mask-preview-final.png) | ![设置](shots/mask-settings.png) |
+
+四种遮罩样式可选，**柔和模糊**为默认：
+
+| 四种样式的取舍 | 原始分辨率细节对比 |
+| --- | --- |
+| ![样式对比](shots/preview-2-styles.png) | ![细节](shots/preview-1-compare.png) |
+
+**右侧中英文可分别收起** —— 练听力时不想被英文剧透就关掉英文；点按钮或按 `E` / `C`：
+
+![中英开关](shots/lang-preview.png)
+
+**整个字幕面板也能收起来** —— 纯听时把视频放到最大，`H` 或点面板边缘的把手：
+
+![收起面板](shots/collapse-preview.png)
+
+---
+
+## 四种打开方式
+
+**① 打包成 Mac App**（推荐，最省事）
+
+装好之后是启动台/Spotlight 里的一个普通应用，双击即用，模型随包带着，连首次要下模型这一步都省了：
+
+```bash
+cd desktop && node build.mjs     # → ../dist/EchoLingo.app
+open ../dist/EchoLingo.app
+```
+
+**② 在线直接用**（只想用、不想装）
 
 打开分享链接即可，无需安装任何东西。视频仍然只在你自己的浏览器里处理，不会上传。
 
-**② 本机双击启动**（macOS）
+**③ 本机双击启动**（macOS，不打包）
 
 双击 `start.command`。
 
-**③ 手动起服务**（开发 / 局域网）
+**④ 手动起服务**（开发 / 局域网）
 
 ```bash
 node server.js          # 生产模式，监听 $PORT，带 COOP/COEP 头
@@ -54,13 +93,17 @@ python3 tools/serve.py 8765 --open   # 开发模式，自动打开浏览器
 | 逐词跟读高亮 | 播放时按词的起止时间把右侧单词依次染成浅绿，当前词更深；没有逐词时间戳的素材（人工字幕）按词长比例自动分摊 |
 | 字幕导入 | srt / vtt / txt / json，自动拆分同一条里的中英双语；导入即中断正在进行的识别 |
 | 双语对照 | 右侧逐句显示英文与中文，随播放高亮并自动滚动 |
+| 画面字幕遮罩 | 把**烧录进画面**的英文字幕就地模糊掉，逼自己先听。用 `backdrop-filter` 让合成器去糊背后的像素，不复制视频帧、不逐帧重绘；位置按 `object-fit: contain` 的换算实时计算，黑边、窗口缩放、面板收起都会跟着重算。四种样式：柔和模糊 / 毛玻璃 / 马赛克 / 纯色遮罩条 |
+| 字幕自动定位 | 播放中**静默采样**（不打断观看，攒够帧数再回填位置），或点「重新自动定位」跳着抽 14 帧扫全片。逐行累计横向梯度、与首帧的差异、行内方差三个特征，只看画面下半部，置信度不够就保留默认位置；也可以手动拖上/下边界 |
+| 中英独立收起 | 右侧英文与中文可分别隐藏（`E` / `C`）。用容器 class 切换而不是重建 DOM —— 识别时每 500ms 就要重排一次字幕，切 class 是零成本 |
+| 面板收起 | 整个右侧面板收成 26px 的竖排把手（`H`），视频区宽 857 → 1378px；状态记在设置里，刷新后仍保持 |
 | 中英界面 | 全部界面文案双语，一键切换并记住，动态生成的内容（字幕列表、收藏夹、状态栏）同步重建 |
 | 浅色 / 深色 | 两套完整配色（含深色滚动条、悬停态、单词卡、抽屉），另可跟随系统；首屏前就定好主题，不会白闪一下再变黑 |
 | 单词卡片 | 音标、中文释义、词性、英文释义、词形还原、在原文中的例句；可朗读、可收藏 |
 | 句子朗读 | 系统本地语音合成，可调语速与音色；也可重播该句的原声片段 |
 | 精听模式 | 只保留当前句，配上一句／重播／慢速／下一句按钮 |
 | 收藏夹 | 生词与句子两个清单，支持搜索、导出 JSON、导入合并 |
-| 快捷键 | 空格播放暂停，← → 切句，R 重播，L 循环，S 朗读，D 收藏，Esc 关闭浮层 |
+| 快捷键 | 空格播放暂停，← → 切句，R 重播，L 循环，S 朗读，D 收藏，`E` / `C` 收起英文／中文，`H` 收起面板，`Alt` 临时看画面字幕原文，Esc 关闭浮层 |
 | 离线 | Service Worker 缓存应用外壳，模型与词典走缓存优先；点「全部缓存到本机」一次到位 |
 
 ---
@@ -363,35 +406,54 @@ python3 tools/build_dict.py ecdict.csv lemma.en.txt dict
 
 ## 桌面版（macOS）
 
-把整站打包成 `.app` / `.dmg`，双击即用、完全离线。核心思路：用 Electron 在主进程里起一个 `127.0.0.1` 随机端口的本地 HTTP 服务（复用 `server.js`），这样 COOP/COEP 头照常下发、`crossOriginIsolated` 成立、wasm 多线程正常；模型和 wasm 随包打进 `Resources/app/`，从本地磁盘读取，秒级加载 —— 也彻底绕开了网页版「首次访问要下 200MB 模型」的痛点。
+把整站打包成 `.app`，双击即用、完全离线（553MB，其中模型 237MB，站点不联网也能跑）。
 
-### 打包命令
+核心思路：Electron 主进程里起一个本地 HTTP 服务，页面从 `http://127.0.0.1` 加载。**这一步是必须的，不是图方便** —— onnxruntime 的 wasm 后端要多线程就得有 `SharedArrayBuffer`，而浏览器只在 `crossOriginIsolated` 成立时放开它，条件正是文档响应带 COOP/COEP 头。`file://` 给不了响应头，Chromium 里自定义协议也拿不到跨源隔离，只有 `http://127.0.0.1`（潜在可信来源）能同时满足「发得了头」和「注册得了 Service Worker」。
+
+### 打包
 
 ```bash
-npm install                    # 装 electron + electron-builder
-npm run dist:dir               # 只出 .app（快速验证，产物在 release/mac-arm64/）
-npm run dist                   # 出 .app + .dmg（产物在 release/）
+cd desktop
+node build.mjs              # → ../dist/EchoLingo.app
+open ../dist/EchoLingo.app
 ```
 
-### 关键配置（`package.json` 的 `build` 字段）
+**零依赖**：只要系统有 `node` 和 macOS 自带的 `ditto` / `plutil` / `codesign`。首次会下 Electron 的 zip（124MB，镜像优先、失败回退 GitHub），缓存在 `desktop/.electron-cache/`，之后重建是秒级。
 
-- **`asar: false`** —— 刻意不用 asar 归档。两个原因：① 模型和 wasm 本来就是已压缩的二进制，asar 没有体积收益；② 某些受限环境下 electron-builder 写 `app.asar` 会被文件代理拦截，直接平铺目录更稳。
-- **`files` 白名单** —— 只打包 `index.html`、`css/js/dict/media/models/vendor`、`server.js`、`electron/main.js`、图标；排除 `bench/`、`tools/`、`smoke.js`、`release/`。
-- **图标** —— `electron/icon.icns` 由 `electron/icon.svg` 用 `sips` + `iconutil` 生成（见 `icon.iconset/`）。
-- **未签名** —— 没有 Apple Developer ID，打包跳过签名。首次打开需右键 →「打开」，或 `xattr -dr com.apple.quarantine` 解除隔离。
+### 为什么不用 @electron/packager
 
-### 主进程（`electron/main.js`）要点
+packager 依赖 `@electron/get` → `@electron-internal/extract-zip`，后者是 napi-rs 原生模块。在 macOS 27 上加载它会被系统的库校验直接拒绝：
 
-- `require('../server.js')` 拿到 `listen(0, '127.0.0.1')`，随机端口避免冲突，服务只监听回环地址。
-- `webPreferences` 保持 `contextIsolation: true`、`nodeIntegration: false`、`sandbox: true` —— 页面是同源 HTTP，靠响应头获得 `crossOriginIsolated`，不需要开任何危险的权限。
-- 外部链接交给系统浏览器（`shell.openExternal`），视频文件从不离开本机。
+```
+dlopen(...index.darwin-universal.node): code signature ...
+not valid for use in process: mapping process and mapped file
+(non-platform) have different Team IDs
+```
+
+Node 进程和那个 `.node` 的 Team ID 不一致，系统不允许加载 —— `electron` 的 postinstall（解压）和 packager（解压）都会失败。而 zip 本身的**下载**是好的，所以 `build.mjs` 干脆不依赖任何 npm 包：自己 `fetch` 下 zip → `ditto` 解压 → 手工组装 bundle → `codesign` ad-hoc 重签。
+
+> Apple Silicon 上 ad-hoc 重签不能省：往 bundle 里塞了东西之后 Electron 官方签名必然失效，而签名无效的 arm64 应用会被系统拒绝启动。
+
+### 几个刻意的设计
+
+- **端口固定 8731**（被占用才顺延到 8732…）。localStorage / IndexedDB（收藏夹）和 Service Worker 缓存都是按来源隔离的，端口一变用户的收藏就没了 —— 所以不能图省事用随机端口。
+- **`backgroundThrottling: false`** —— 用户很可能切去别的窗口干等。默认的后台节流会把定时器压到 1 秒一次，进度回调和段间调度都会跟着变慢。
+- **`asar: false`** —— 模型和 wasm 本来就是已压缩的二进制，asar 没有体积收益；而 240MB 的 onnx 从归档里流式读取更慢、也更容易出问题。
+- **关窗即销毁渲染进程** —— 4 个识别会话占的内存随之还回去。
+
+### 另一套打包路线
+
+仓库里还留着一份 `electron/` + 根 `package.json` 的 electron-builder 配置（`npm run dist` 出 dmg）。思路相同，但走 packager，在本机受上面那个原生模块问题限制；要用的话先 `pnpm install` 把依赖装回来。**实际发布走的是 `desktop/build.mjs`。**
+
+更多细节（含 `ELECTRON_RUN_AS_NODE` 这个环境坑）见 [`desktop/README.md`](desktop/README.md)。
 
 ---
 
 ## 已知限制
 
 - 音轨解码会把整段 PCM 读进内存。16 kHz 单声道下约每分钟 1.9 MB，90 分钟以上会明显吃内存，超过 90 分钟会给出提示。
-- 逐词时间戳在超过 25 分钟的视频上默认关闭（可在设置里强制开启），因为逐词对齐会拉长识别时间。
+- 逐词时间戳默认开启。设置里可以关掉换成「更快」模式，那时句子时间轴按长度摊分（估算值）。实测逐词只比不要时间戳贵约 13%，而句子边界和跟读高亮都依赖它，所以长视频反而更需要开着。
+- 画面字幕遮罩的位置靠自动检测：分析画面下半部的文字行。字幕在画面上半部、或视频压根没有烧录字幕时，检测会放弃并保留默认的底部 8%，此时请手动拖上/下边界。极少数视频字幕位置会来回变（例如中英双行交替出现），固定的一条带可能盖不全。
 - 推理跑在 Worker 里，界面在识别期间保持可操作；但推理仍占用若干 CPU 线程（本机 4 个），长视频期间风扇会转。
 - 取消只在段落边界生效。点了「重新识别」或换了素材，最长要等当前那一段（约 28 秒音频）跑完才会真正停下。
 - 收藏存在 IndexedDB 里，清除浏览器数据会一起清掉。重要内容记得导出 JSON。
