@@ -159,6 +159,8 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; }
 .btn-icon { padding: 7px; }
 .btn-lang span { font-size: 11.5px; font-weight: 700; letter-spacing: .4px; min-width: 22px; text-align: center; }
 .ico { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+/* 齿轮细节比别的图标密，15px 下 1.7 的描边会糊成一团，单独压细一点 */
+.ico-gear { stroke-width: 1.45; }
 .ico-lg { width: 20px; height: 20px; }
 .pill {
   background: var(--brand-soft); color: var(--brand);
@@ -391,6 +393,12 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; }
 .sense .txt { flex: 1 1 auto; min-width: 0; }
 .wc-def { font-size: 12.5px; color: var(--text-2); line-height: 1.6; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
 .wc-def b { color: var(--text-3); font-weight: 600; font-size: 11px; display: block; margin-bottom: 3px; letter-spacing: .3px; }
+/* 西语模式：词卡脚注里说明「这个西语词是经哪个英文词查到的」 */
+.via { font-size: 12px; color: var(--text-3); margin-top: 6px; }
+.via code { font-size: 11.5px; color: var(--text-2); }
+/* 收藏夹分区提示：当前模式看的是哪一档收藏，另一档有多少条。
+   没有这行的话，「英语模式里看不到刚存的西语单词」会被当成丢数据。 */
+.fav-scope { padding: 7px 14px 0; font-size: 12px; color: var(--text-3); line-height: 1.5; }
 .wc-foot {
   padding: 8px 12px; background: var(--panel-2); border-top: 1px solid var(--line);
   font-size: 11.5px; color: var(--text-3); line-height: 1.6;
@@ -427,6 +435,7 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; }
 .fav-item .p { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); margin-top: 1px; }
 .fav-item .d { font-size: 13px; color: var(--text-2); margin-top: 5px; line-height: 1.55; }
 .fav-item .en { font-family: Georgia, serif; font-size: 14.5px; line-height: 1.6; }
+.fav-item .mid { font-family: Georgia, serif; font-size: 13.5px; line-height: 1.6; color: var(--text-2); margin-top: 2px; }
 .fav-item .zh { font-size: 12.5px; color: var(--text-2); margin-top: 3px; line-height: 1.6; }
 .fav-item .meta { font-size: 11px; color: var(--text-3); margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; }
 .fav-item .tools { position: absolute; right: 7px; top: 7px; display: flex; gap: 3px; opacity: 0; transition: opacity .12s; }

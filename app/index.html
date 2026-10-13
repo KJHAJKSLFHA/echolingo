@@ -80,7 +80,10 @@ window.__ECHOLINGO_VER__ = '3.9.0';
       <button class="btn btn-icon btn-lang" id="btnLang" data-i18n-title="top.lang" title="切换界面语言"><span id="langLabel">EN</span></button>
 
       <button class="btn btn-icon" id="btnSettings" data-i18n-title="top.settings" title="设置与离线状态">
-        <svg viewBox="0 0 24 24" class="ico"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+        <!-- 齿轮（Feather 的 settings 轮廓）。原来这里是「小圆 + 八条射线」，
+             和左边切主题的太阳图标几乎一模一样，用户根本分不出哪个是设置。
+             现在改成带齿的外圈 + 中心轴孔：轮廓本身就是齿轮形，不会再被当成太阳。 -->
+        <svg viewBox="0 0 24 24" class="ico ico-gear"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
     </div>
   </header>
@@ -252,6 +255,7 @@ window.__ECHOLINGO_VER__ = '3.9.0';
       <button data-tab="sentences" data-i18n="fav.sentences">句子</button>
     </div>
     <input id="favSearch" class="reader-search" type="search" data-i18n-ph="fav.search" placeholder="搜索收藏…">
+    <div class="fav-scope" id="favScope"></div>
     <div class="drawer-body" id="favBody"></div>
   </aside>
 

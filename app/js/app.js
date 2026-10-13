@@ -43,7 +43,9 @@ const S = {
   recogLang: null,     // 现有字幕是**按哪种语言**识别出来的（切模式时用来判断要不要问「重新识别」）
   modelSwitched: false,// 用户是否手动切过模型（切过就不再做开机预热）
   settings: {
-    voiceName: '', ttsRate: 0.95, fontSize: 18, autoScroll: true,
+    // 朗读音色按语言各记一个：英语模式和西语模式用的是两套完全不同的音色，
+    // 共用一个槽位的话每切一次模式都要重选，语音还会串味。
+    voiceEn: '', voiceEs: '', ttsRate: 0.95, fontSize: 18, autoScroll: true,
     markWords: true, transMode: 'local', wordTs: 'auto', autoRun: true,
     karaoke: true, asrModel: '',
     // 右侧两列可以分别收起。练听力时不想被英文剧透就关掉英文，
@@ -196,7 +198,11 @@ function applySourceLang() {
     S.settings.mode = lang;
     saveSettings();
   }
+  // 朗读音色也跟着识别语言换：西语模式要挑西语音色，否则念出来是一口英文腔。
+  // 放在 applyModeView 之前 —— 它内部会刷新设置抽屉里那份音色下拉。
+  TTS.setTTSLang(lang);
   applyModeView();
+  fillVoiceSelect(TTS.getVoices());
   return lang;
 }
 
@@ -367,13 +373,20 @@ function loadSettings() {
   // 嵌套对象要单独合一次：上面那句是浅合并，老版本存下的 mask 若少字段，
   // 缺的会变成 undefined，后面按百分比算位置就会得到 NaN。
   S.settings.mask = { ...SUBMASK.MASK_DEFAULTS, ...(S.settings.mask || {}) };
+  // 老版本只有一个 voiceName（不分语言）。音色改成按语言记之后，把那个值
+  // 当作英语音色迁过来 —— 用户在设置里挑过的音色不该因为升级丢掉。
+  if (!S.settings.voiceEn && !S.settings.voiceEs && S.settings.voiceName) {
+    S.settings.voiceEn = S.settings.voiceName;
+  }
+  delete S.settings.voiceName;
   try {
     const th = localStorage.getItem(LS_THEME);
     if (th === 'light' || th === 'dark' || th === 'auto') S.themePref = th;
   } catch {}
   const st = S.settings;
   $('#selRate').value = '1';
-  $('#setVoice').dataset.pending = st.voiceName;
+  // 音色下拉不在这里填：它要按当前模式挑 voiceEn / voiceEs 槽，
+  // 交给 applySourceLang()（它知道模式，且跑在 TTS.initTTS 之后）去填。
   $('#setTtsRate').value = st.ttsRate;
   $('#setFontSize').value = st.fontSize;
   $('#chkAutoScroll').checked = st.autoScroll;
@@ -489,7 +502,22 @@ function applyModeView() {
   // 字幕面板那三个语言按钮跟着走：西语模式要多一个「英文翻译」的开关，
   // 原文按钮的标签也从「英文」变成「西语」。
   applyLangView();
+  // 收藏夹按模式分区：切完模式，角标和抽屉内容都要当场换成另一档
+  refreshFavCounts();
+  if (!$('#favDrawer').hidden) renderFavs();
 }
+
+/* ── 收藏分区 ──
+   英语模式只看英语收藏，西语模式只看西语收藏。
+   分区键统一取 getMode()：存的时候按它打标、看的时候按它筛，同一个来源，
+   不会出现「刚收藏完却在列表里找不到」。
+   老记录没有 lang 字段（都是英语时代存的），一律当英语，升级后一条都不会少。 */
+const favLang = () => (getMode() === 'es' ? 'es' : 'en');
+const recLang = (r) => (r && r.lang === 'es' ? 'es' : 'en');
+
+/** 收藏主键。西语要带语言前缀 —— 「no」「a」「son」这些词英语西语都有，
+ *  拿裸词当主键两边会互相覆盖。英语那批不加前缀，只为兼容老库里已有的键。 */
+const favWordId = (word, lang = favLang()) => (lang === 'es' ? `es:${word}` : word);
 
 /** 切到某个学习语言模式。界面语言不动。 */
 async function setMode(mode) {
@@ -584,8 +612,13 @@ async function openStores() {
 }
 
 async function refreshFavCounts() {
-  const n = S.favWords.size + S.favSentences.size;
+  // 角标 = 当前模式这一档的条数，跟抽屉里看到的对得上。
+  // 显示总数会让「切到西语模式，角标 100、抽屉里 3 条」看起来像 bug。
+  const mine = favLang();
+  const n = Array.from(S.favWords.values()).filter((w) => recLang(w) === mine).length
+    + Array.from(S.favSentences.values()).filter((s) => recLang(s) === mine).length;
   setText('favCount', String(n));
+  renderFavScope();
 }
 
 /* ============================ UI 绑定 ============================ */
@@ -736,11 +769,11 @@ function bindUI() {
   $('#wcClose').addEventListener('click', closeWordCard);
   $('#wcSpeak').addEventListener('click', () => {
     const w = S.wordCardFor; if (!w) return;
-    TTS.speak(w.word, { voiceName: S.settings.voiceName, rate: S.settings.ttsRate });
+    speakIn(w.word, w.lang || getMode(), { rate: S.settings.ttsRate });
   });
   $('#wcSpeakSlow').addEventListener('click', () => {
     const w = S.wordCardFor; if (!w) return;
-    TTS.speak(w.word, { voiceName: S.settings.voiceName, rate: 0.6 });
+    speakIn(w.word, w.lang || getMode(), { rate: 0.6 });
   });
   $('#wcFav').addEventListener('click', () => { if (S.wordCardFor) toggleFavWord(S.wordCardFor); });
 
@@ -767,7 +800,11 @@ function bindUI() {
   });
 
   // --- 设置项 ---
-  $('#setVoice').addEventListener('change', (e) => { S.settings.voiceName = e.target.value; saveSettings(); });
+  $('#setVoice').addEventListener('change', (e) => {
+    // 音色按语言分槽：在西语模式里选的记到 voiceEs，英语模式记到 voiceEn
+    S.settings[voiceKey()] = e.target.value;
+    saveSettings();
+  });
   $('#setTtsRate').addEventListener('input', (e) => { S.settings.ttsRate = parseFloat(e.target.value); saveSettings(); });
   $('#setFontSize').addEventListener('input', (e) => {
     S.settings.fontSize = parseInt(e.target.value, 10);
@@ -1334,8 +1371,14 @@ function updateKaraoke(time) {
     的时候，模式已经切到英语、字幕却还是西语那套，那时中间那行还在（也还有用），
     开关就得留着 —— 否则就会出现「看得见英文翻译、却没有按钮关掉它」。
     反过来一旦按英语重新识别过，cue 里没有 mid 了，开关自然消失。 */
+/** 当前字幕的**内容**语言 —— 就是识别时用的语言。
+ *  不能直接用模式：用户对「要按西语重新识别吗」答了「先不重识别」时，
+ *  模式已经切到英语、字幕却还是西语那一套，读出来当然还是西语。
+ *  还没识别过任何东西时才退回模式。 */
+function subLang() { return S.recogLang || getMode(); }
+
 function subHasMidLine() {
-  return getMode() === 'es' || S.cues.some((c) => c.mid);
+  return subLang() === 'es' || S.cues.some((c) => c.mid);
 }
 
 function toggleLang(which) {
@@ -1499,7 +1542,7 @@ function wordSpansHTML(text) {
   for (const tok of SUB.tokenize(text)) {
     if (SUB.isWordToken(tok)) {
       const nw = DICT.normalizeWord(tok);
-      const saved = S.favWords.has(nw) ? ' saved' : '';
+      const saved = S.favWords.has(favWordId(nw, favLang())) ? ' saved' : '';
       en += `<span class="w${saved}" data-w="${escapeHtml(nw)}">${escapeHtml(tok)}</span>`;
     } else {
       en += escapeHtml(tok);
@@ -1582,7 +1625,7 @@ function onSubsClick(e) {
   if (actBtn) {
     e.stopPropagation();
     const act = actBtn.dataset.act;
-    if (act === 'speak') TTS.speak(cue.text, { voiceName: S.settings.voiceName, rate: S.settings.ttsRate });
+    if (act === 'speak') speakIn(cue.text, subLang(), { rate: S.settings.ttsRate });
     else if (act === 'play') playCueAudio(idx);
     else if (act === 'fav') { toggleFavSentence(cue); renderSubs($('#subSearch').value.trim()); setActive(idx, false); }
     else if (act === 'copy') {
@@ -1665,6 +1708,22 @@ function applySearch(q, quiet) {
   if (!quiet) toast(hits ? t('toast.found', { n: hits }) : t('toast.notFound'));
 }
 
+/* ---------------- 朗读音色：按语言分槽 ----------------
+   英语模式和西语模式用两套音色，各记各的（voiceEn / voiceEs），
+   切换模式时下拉列表与默认音色一起换。 */
+
+/** 当前模式该读哪个槽位。 */
+const voiceKey = (lang = getMode()) => (lang === 'es' ? 'voiceEs' : 'voiceEn');
+
+/** 当前模式选中的音色名（空串 = 自动挑一个）。 */
+function currentVoiceName(lang) { return S.settings[voiceKey(lang)] || ''; }
+
+/** 用指定的语言朗读一段文本（音色取该语言自己的槽位）。
+ *  收藏里的句子英语西语混在一起，读哪条就得用哪条的语言，跟当前模式无关。 */
+function speakIn(text, lang, extra = {}) {
+  TTS.speak(text, { voiceName: currentVoiceName(lang), lang: lang || getMode(), ...extra });
+}
+
 /* ============================ 单词卡片 ============================ */
 
 async function openWordCard(word, anchor, cueIdx) {
@@ -1677,12 +1736,37 @@ async function openWordCard(word, anchor, cueIdx) {
   $('#wcFoot').textContent = '';
   positionCard(card, anchor);
 
-  const entry = await DICT.lookup(word);
+  const lang = subLang();
+  const es = lang === 'es';
+
+  // ── 西语模式：先把这个词翻成英文，再拿英文去查那本 ECDICT ──
+  // 手边只有英语词典（ECDICT，几十万词条），没有西语词典。es→en 这一跳
+  // 已经是必然要跑的模型（字幕翻译就用它），借它查出英文对译词，就能拿到
+  // 同一份中文释义 —— 不用再塞一份上百 MB 的西语词典进安装包。
+  // 代价：西语模式点一个词要多等一次推理；换来的是「释义跟英语模式一模一样」。
+  let entryWord = word;
+  let viaEn = '';
+  if (es) {
+    try {
+      const r = await MT.translateMany([word], { from: 'es' });
+      viaEn = String((r && r[0] && r[0].mid) || '').trim();
+      if (viaEn) entryWord = viaEn;
+    } catch (e) {
+      console.warn('[wordcard] 西语词转英文失败，直接按原词查', e);
+    }
+  }
+
+  const entry = await DICT.lookup(entryWord);
   const cue = S.cues[cueIdx];
   const inSentence = cue?.text || '';
   S.wordCardFor = {
-    word: entry?.word || word,
+    // 卡片和收藏都留用户点下去的那个词。西语模式尤其重要：查到的 entry 是
+    // 那本**英语**词典里的对译词（práctica → practice），拿 entry.word 当主键
+    // 的话西语收藏里会显示成英语单词，还会跟英语模式收藏的 practice 撞车。
+    word: es ? word : (entry?.word || word),
     query: word,
+    lang,
+    viaEn,
     phonetic: entry?.phonetic || '',
     trans: entry?.trans || '',
     pos: entry?.pos || '',
@@ -1699,8 +1783,10 @@ async function openWordCard(word, anchor, cueIdx) {
     setText('wcPhon', '');
     $('#wcBody').innerHTML = `<div class="sense"><div class="txt">${escapeHtml(t('wc.missing'))}</div></div>`;
   } else {
-    setText('wcWord', entry.word);
-    setText('wcPhon', entry.phonetic || '');
+    // 西语模式卡片标题保持西语原词（那才是用户点的），英语模式照旧用词形还原后的词
+    setText('wcWord', es ? word : entry.word);
+    // 音标是英语的，贴在西语词头上会误导 —— 西语模式把对译词放到脚注里说明
+    setText('wcPhon', es ? '' : (entry.phonetic || ''));
     const senses = splitSenses(entry.trans, entry.pos);
     $('#wcBody').innerHTML = senses.map((s) =>
       `<div class="sense">${s.pos ? `<span class="pos">${escapeHtml(s.pos)}</span>` : ''}<span class="txt">${escapeHtml(s.txt)}</span></div>`
@@ -1708,10 +1794,13 @@ async function openWordCard(word, anchor, cueIdx) {
       ? `<div class="wc-def"><b>${escapeHtml(t('wc.engDef'))}</b>${escapeHtml(entry.engdef)}</div>` : '');
   }
 
-  const inf = entry?.inflected ? escapeHtml(t('wc.inflected', { word })) : '';
+  const via = es && viaEn
+    ? `<div class="via">${escapeHtml(t('wc.viaEn', { word: viaEn }))}${
+      entry?.phonetic ? ` <code>${escapeHtml(entry.phonetic)}</code>` : ''}</div>` : '';
+  const inf = entry?.inflected ? escapeHtml(t('wc.inflected', { word: entryWord })) : '';
   const ex = inSentence && inSentence.toLowerCase().includes(word.toLowerCase().slice(0, 4))
     ? `<div class="ex">${escapeHtml(t('wc.example'))}<em>${escapeHtml(highlightWord(inSentence, word))}</em></div>` : '';
-  $('#wcFoot').innerHTML = ex + inf + `<div style="margin-top:4px">${escapeHtml(t('wc.source'))}</div>`;
+  $('#wcFoot').innerHTML = ex + via + inf + `<div style="margin-top:4px">${escapeHtml(t('wc.source'))}</div>`;
   syncFavButton();
 }
 
@@ -1767,7 +1856,7 @@ function closeWordCard() {
 
 function syncFavButton() {
   const btn = $('#wcFav');
-  const on = S.wordCardFor && S.favWords.has(S.wordCardFor.word);
+  const on = S.wordCardFor && S.favWords.has(favWordId(S.wordCardFor.word, favLang()));
   btn.classList.toggle('on', !!on);
   btn.title = on ? t('wc.unfav') : t('wc.fav');
 }
@@ -1775,16 +1864,17 @@ function syncFavButton() {
 /* ============================ 收藏 ============================ */
 
 async function toggleFavWord(w) {
-  const id = w.word;
+  const lang = favLang();
+  const id = favWordId(w.word, lang);
   if (S.favWords.has(id)) {
     S.favWords.delete(id);
     await idbDelete(S.db, 'words', id).catch(() => {});
-    toast(t('wc.unfavDone', { word: id }));
+    toast(t('wc.unfavDone', { word: w.word }));
   } else {
-    const rec = { ...w, id, addedAt: Date.now(), count: 1 };
+    const rec = { ...w, id, lang, addedAt: Date.now(), count: 1 };
     S.favWords.set(id, rec);
     await idbPut(S.db, 'words', rec).catch(() => {});
-    toast(t('wc.favDone', { word: id }));
+    toast(t('wc.favDone', { word: w.word }));
   }
   syncFavButton();
   await refreshFavCounts();
@@ -1793,8 +1883,9 @@ async function toggleFavWord(w) {
   renderSubs(q);
   if (keep >= 0) setActive(keep, false);
   if (!$('#wordcard').hidden && S.wordCardFor) {
-    // 保持卡片锚点上的选中态
-    const el2 = S.cueEls[S.activeIdx]?.querySelector(`.w[data-w="${CSS.escape(id)}"]`);
+    // 保持卡片锚点上的选中态。这里要用**原始词**去选 —— 字幕里的
+    // data-w 存的是裸词，收藏主键可能带着 es: 前缀。
+    const el2 = S.cueEls[S.activeIdx]?.querySelector(`.w[data-w="${CSS.escape(w.word)}"]`);
     el2?.classList.add('sel');
   }
   if (!$('#favDrawer').hidden) renderFavs();
@@ -1812,7 +1903,8 @@ async function toggleFavSentence(cue) {
     toast(t('fav.unsavedSent'));
   } else {
     const rec = {
-      id, en: cue.text, zh: cue.zh || '', video: S.name,
+      id, en: cue.text, zh: cue.zh || '', mid: cue.mid || '', video: S.name,
+      lang: favLang(),
       start: cue.start, end: cue.end, addedAt: Date.now(),
     };
     S.favSentences.set(id, rec);
@@ -1823,12 +1915,30 @@ async function toggleFavSentence(cue) {
   if (!$('#favDrawer').hidden) renderFavs();
 }
 
+/** 抽屉顶部那行分区说明：这一档是哪种语言、多少条，另一档还有多少条。
+ *  没有这行的话，用户在英语模式里找不到刚存的西语词，只会以为收藏丢了。 */
+function renderFavScope() {
+  const box = $('#favScope');
+  if (!box) return;
+  const mine = favLang();
+  const other = mine === 'es' ? 'en' : 'es';
+  const countOf = (l) => Array.from(S.favWords.values()).filter((w) => recLang(w) === l).length
+    + Array.from(S.favSentences.values()).filter((s) => recLang(s) === l).length;
+  const n = countOf(mine);
+  const nOther = countOf(other);
+  const nameOf = (l) => t(l === 'es' ? 'fav.langEs' : 'fav.langEn');
+  box.textContent = t('fav.scope', { lang: nameOf(mine), n })
+    + (nOther ? ' · ' + t('fav.other', { lang: nameOf(other), n: nOther }) : '');
+}
+
 function renderFavs() {
   const box = $('#favBody');
   const q = ($('#favSearch').value || '').trim().toLowerCase();
+  const mine = favLang();
   box.innerHTML = '';
+  renderFavScope();
   if (S.favTab === 'words') {
-    let list = Array.from(S.favWords.values());
+    let list = Array.from(S.favWords.values()).filter((w) => recLang(w) === mine);
     if (q) list = list.filter((w) => (w.word + w.trans).toLowerCase().includes(q));
     list.sort((a, b) => b.addedAt - a.addedAt);
     if (!list.length) {
@@ -1850,8 +1960,8 @@ function renderFavs() {
       ]));
     }
   } else {
-    let list = Array.from(S.favSentences.values());
-    if (q) list = list.filter((s) => (s.en + s.zh).toLowerCase().includes(q));
+    let list = Array.from(S.favSentences.values()).filter((s) => recLang(s) === mine);
+    if (q) list = list.filter((s) => (s.en + s.zh + (s.mid || '')).toLowerCase().includes(q));
     list.sort((a, b) => b.addedAt - a.addedAt);
     if (!list.length) {
       box.innerHTML = `<div class="empty"><p>${escapeHtml(t('fav.emptySents'))}</p><p class="muted">${escapeHtml(t('fav.emptySentsHint'))}</p></div>`;
@@ -1863,6 +1973,8 @@ function renderFavs() {
           `<button class="icon-btn" data-act="speak-sent" data-id="${escapeHtml(s.id)}" title="${escapeHtml(t('cue.speak'))}">🔊</button>` +
           `<button class="icon-btn" data-act="del-sent" data-id="${escapeHtml(s.id)}" title="${escapeHtml(t('common.close'))}">✕</button>` }),
         el('div', { class: 'en', text: s.en }),
+        // 西语收藏多一行英文对译，跟字幕面板一样
+        ...(s.mid ? [el('div', { class: 'mid', text: s.mid })] : []),
         el('div', { class: 'zh', text: s.zh || t('fav.noZh') }),
         el('div', { class: 'meta', html:
           `<span>${escapeHtml(s.video || t('fav.unknownVideo'))}</span><span>${fmtTime(s.start)}</span><span>${new Date(s.addedAt).toLocaleDateString()}</span>` }),
@@ -1877,10 +1989,10 @@ async function onFavBodyClick(e) {
   const { act, id } = btn.dataset;
   if (act === 'speak') {
     const w = S.favWords.get(id);
-    if (w) TTS.speak(w.word, { voiceName: S.settings.voiceName, rate: S.settings.ttsRate });
+    if (w) speakIn(w.word, w.lang || 'en', { rate: S.settings.ttsRate });
   } else if (act === 'speak-sent') {
     const s = S.favSentences.get(id);
-    if (s) TTS.speak(s.en, { voiceName: S.settings.voiceName, rate: S.settings.ttsRate });
+    if (s) speakIn(s.en, s.lang || 'en', { rate: S.settings.ttsRate });
   } else if (act === 'del-word') {
     S.favWords.delete(id);
     await idbDelete(S.db, 'words', id).catch(() => {});
@@ -1950,8 +2062,9 @@ function closeDrawers() {
 }
 
 function fillSettings() {
-  const v = $('#setVoice');
-  if (!v.options.length) fillVoiceSelect(TTS.getVoices());
+  // 音色列表跟着模式走（英语一套、西语一套），所以不能像以前那样
+  // 「options 非空就不重建」—— 切完模式再打开设置会看到上一种语言的音色。
+  fillVoiceSelect(TTS.getVoices());
   ttsVoiceReminder();
   renderStatus();
   applyTheme();
@@ -1960,16 +2073,17 @@ function fillSettings() {
 function fillVoiceSelect(voices) {
   const sel = $('#setVoice');
   if (!sel) return;
-  const want = S.settings.voiceName;
+  const want = currentVoiceName();
   const prev = sel.value;
   sel.innerHTML = '';
   sel.appendChild(el('option', { value: '', text: t('status.voiceAuto') }));
   for (const v of voices) {
     sel.appendChild(el('option', { value: v.name, text: `${v.name} · ${v.lang}${v.localService ? ` · ${t('common.local')}` : ''}` }));
   }
-  const pick = voices.some((v) => v.name === want) ? want : (voices.some((v) => v.name === prev) ? prev : '');
-  sel.value = pick;
-  if (want && !voices.some((v) => v.name === want)) S.settings.voiceName = '';
+  // 只认「本语言音色池里有这个名字」：切模式后原来选的音色属于另一种语言，
+  // 这时下拉退回「自动」。存档里那个名字留着不动 —— 切回去还要用它。
+  sel.value = voices.some((v) => v.name === want) ? want
+    : (voices.some((v) => v.name === prev) ? prev : '');
   ttsVoiceReminder();
 }
 
@@ -2439,7 +2553,7 @@ function onKeyDown(e) {
     case 'h': toggleReader(); break;
     case 's': {
       const c = S.cues[S.activeIdx];
-      if (c) TTS.speak(c.text, { voiceName: S.settings.voiceName, rate: S.settings.ttsRate });
+      if (c) speakIn(c.text, subLang(), { rate: S.settings.ttsRate });
       break;
     }
     case 'd': {
