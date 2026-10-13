@@ -34,7 +34,7 @@ await sleep(1200);
 // 导入示例字幕，让右侧有内容
 const doc = await cmd('DOM.getDocument', { depth: 1 });
 const q = await cmd('DOM.querySelector', { nodeId: doc.root.nodeId, selector: '#fileSub' });
-await cmd('DOM.setFileInputFiles', { files: ['/Users/orion/WorkBuddy/2026-10-12-11-40-26/english-video-reader/media/demo.srt'], nodeId: q.nodeId });
+await cmd('DOM.setFileInputFiles', { files: ['/Users/orion/WorkBuddy/2026-10-12-11-40-26/english-video-reader/app/media/demo.srt'], nodeId: q.nodeId });
 for (let i = 0; i < 40; i++) { if (await ev(`document.querySelectorAll('#subs .cue').length > 0`)) break; await sleep(300); }
 
 const probe = () => ev(`(function(){

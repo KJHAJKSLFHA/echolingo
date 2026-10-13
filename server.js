@@ -73,24 +73,32 @@ function createAppServer() {
 
   fs.stat(file, (err, st) => {
     if (!err && st.isDirectory()) {
-      file = path.join(file, 'index.html');
-      st = null;
-      err = null;
-    }
-    if (err || !st || !st.isFile()) {
-      // 应用是单页的：未知路径回到入口，方便直接分享根地址
-      const fallback = path.join(ROOT, 'index.html');
-      return fs.stat(fallback, (e2, st2) => {
-        if (e2 || !st2) {
-          res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-          return res.end('Not Found');
-        }
-        send(res, fallback, st2, req, true);
+      // ⚠️ 目录要**重新 stat 一次**。
+      // 曾经的写法是把 file 改成 index.html、然后把 st 置成 null 直接往下走，
+      // 结果下一行的 `!st.isFile()` 必然成立 → 一律掉进首页兜底。
+      // 表现是：访问 /app/ 打开的却是根目录的官网首页，而且不报任何错。
+      const index = path.join(file, 'index.html');
+      return fs.stat(index, (e2, st2) => {
+        if (e2 || !st2 || !st2.isFile()) return fallbackToIndex(res, req);
+        send(res, index, st2, req, false);
       });
     }
+    if (err || !st || !st.isFile()) return fallbackToIndex(res, req);
     send(res, file, st, req, false);
   });
+});
+
+// 单页应用兜底：未知路径回到根入口，方便直接分享根地址
+function fallbackToIndex(res, req) {
+  const fallback = path.join(ROOT, 'index.html');
+  fs.stat(fallback, (e2, st2) => {
+    if (e2 || !st2) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end('Not Found');
+    }
+    send(res, fallback, st2, req, true);
   });
+}
 }
 
 function send(res, file, st, req, isFallback) {

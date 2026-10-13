@@ -1,8 +1,8 @@
 // 基准用：单个识别 Worker（每个 Worker 一份独立的 ORT session）
-import { pipeline, env } from '../vendor/transformers.min.js';
+import { pipeline, env } from '../app/vendor/transformers.min.js';
 
 const MODELS = new URL('../models/', import.meta.url).pathname;
-const VENDOR = new URL('../vendor/', import.meta.url).pathname;
+const VENDOR = new URL('../app/vendor/', import.meta.url).pathname;
 
 let asr = null;
 

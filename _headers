@@ -1,0 +1,32 @@
+# Netlify 响应头配置
+#
+# ⚠️ 为什么 COOP/COEP 只加在 /app/* 而不是全站：
+#   COEP: require-corp 会拦截页面上**所有**跨域子资源（外部字体、CDN 图片、
+#   第三方脚本），除非对方带 CORP 头。工具本体需要跨源隔离（否则
+#   SharedArrayBuffer 不可用、onnxruntime 只能单线程），但官网首页不需要，
+#   没必要给自己上这道枷锁。
+#
+# 工具本体：crossOriginIsolated = true → 多线程 wasm 生效
+
+/app/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Resource-Policy: same-origin
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+
+# 模型与运行时：内容永不变化，长期强缓存。
+# 这些文件单个几十 MB，每次访问重下会非常痛。
+
+/app/models/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/app/vendor/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/app/dict/*
+  Cache-Control: public, max-age=604800
+
+# 官网用的截图
+/shots/*
+  Cache-Control: public, max-age=604800

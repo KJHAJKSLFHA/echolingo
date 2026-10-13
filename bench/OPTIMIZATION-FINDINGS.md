@@ -178,7 +178,7 @@ node bench/cdp2.mjs http://127.0.0.1:8899/bench/tsmode.html /tmp/tsmode.expr.js
 `bench/long.wav` 是 174 秒测试音频，可这样重建：
 
 ```bash
-afconvert media/demo.m4a -f WAVE -d LEI16@16000 -c 1 /tmp/demo16k.wav
+afconvert app/media/demo.m4a -f WAVE -d LEI16@16000 -c 1 /tmp/demo16k.wav
 python3 -c "
 import wave
 s=wave.open('/tmp/demo16k.wav','rb'); raw=s.readframes(s.getnframes()); fr=s.getframerate()

@@ -5,10 +5,10 @@
 <pre id="out">loading</pre>
 <script type="module">
 // Standalone: does NOT touch bench/bench.html (another session is editing it).
-import { pipeline, env } from '../vendor/transformers.min.js';
+import { pipeline, env } from '../app/vendor/transformers.min.js';
 
 const MODELS = new URL('../models/', import.meta.url).pathname;
-const VENDOR = new URL('../vendor/', import.meta.url).pathname;
+const VENDOR = new URL('../app/vendor/', import.meta.url).pathname;
 const SR = 16000;
 
 let asr = null, pcm = null;

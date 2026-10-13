@@ -42,6 +42,13 @@ EXTRA_TYPES = {
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    # ⚠️ 必须显式声明 HTTP/1.1。
+    # SimpleHTTPRequestHandler 默认是 HTTP/1.0，每条响应后立刻断开连接。
+    # 工具的模块图有十几个并发请求，浏览器在「每域名 6 条连接 + 每条都要重连」
+    # 的情况下会随机掐掉其中几个 —— 表现是「Failed to fetch dynamically
+    # imported module」，而且每次失败的文件都不一样，非常难查。
+    protocol_version = "HTTP/1.1"
+
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=ROOT, **kw)
 

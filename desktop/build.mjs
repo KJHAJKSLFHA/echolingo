@@ -55,12 +55,16 @@ const ZIP_URLS = [
   `https://github.com/electron/electron/releases/download/v${ELECTRON_VERSION}/electron-v${ELECTRON_VERSION}-darwin-${ARCH}.zip`,
 ];
 
-// 只搬站点真正需要的东西。bench/（测试脚本）、tools/、desktop/、dist/ 一律不进包。
+// 工具本体在 app/ 下（仓库根目录留给了产品官网首页）。
+// 桌面版直接把 app/ 的内容铺成 bundle 的站点根目录，所以窗口打开的是工具本身，
+// 不是官网首页 —— 装了 App 的人不该先看一遍介绍页。
+const SITE_SRC = path.join(PROJECT, 'app');
+
+// 站点真正需要的东西。bench/（测试脚本）、tools/、desktop/、shots/ 一律不进包。
 const SITE_ENTRIES = [
   'index.html',
   'manifest.webmanifest',
   'sw.js',
-  'README.md',
   'css',
   'js',
   'vendor',
@@ -206,7 +210,7 @@ async function main() {
   const siteDir = path.join(appDir, 'site');
   await mkdir(siteDir, { recursive: true });
   for (const entry of SITE_ENTRIES) {
-    const from = path.join(PROJECT, entry);
+    const from = path.join(SITE_SRC, entry);
     if (!(await exists(from))) { console.warn(`  跳过不存在的条目: ${entry}`); continue; }
     await cp(from, path.join(siteDir, entry), { recursive: true });
   }
