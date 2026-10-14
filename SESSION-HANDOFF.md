@@ -124,7 +124,7 @@ EchoLingo（外语视频精读工具）现在有**两个学习语言模式**：�
 
 | 出口 | 位置 | 备注 |
 |---|---|---|
-| 网站 | https://echolingo-reader.netlify.app | 官网 `/`，工具 `/app/`；账号 `orion510ike@gmail.com` |
+| 网站 | https://echolingo-app.netlify.app | 官网 `/`，工具 `/app/`；账号 `orion510ike@gmail.com` |
 | macOS App | `/Applications/EchoLingo.app` | **804 MB**，模型内置，双击即用 |
 | GitHub | github.com/KJHAJKSLFHA/echolingo | 公开，`main` 分支 |
 | 本地源码 | 本目录 | `app/js/app.js` 的 `APP_VER` |
