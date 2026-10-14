@@ -38,14 +38,16 @@
 
 ## 四种打开方式
 
-**① 打包成 Mac App**（推荐，最省事）
+**① 打包成桌面 App**（推荐，最省事）
 
-装好之后是启动台/Spotlight 里的一个普通应用，双击即用，模型随包带着，连首次要下模型这一步都省了：
+装好之后是启动台/Spotlight（macOS）或开始菜单（Windows）里的一个普通应用，双击即用，模型随包带着，连首次要下模型这一步都省了：
 
 ```bash
-cd desktop && node build.mjs     # → ../dist/EchoLingo.app
-open ../dist/EchoLingo.app
+cd desktop && node build.mjs        # macOS → ../dist/EchoLingo.app
+npx electron-builder --win --x64    # Windows → release/*.exe（详见「桌面版」一节）
 ```
+
+Windows 版已经打包好挂在 [Releases](https://github.com/KJHAJKSLFHA/echolingo/releases) 上，不想自己编译就直接下载 `EchoLingo-*-x64-echolingo.exe`（安装包）或 `-portable.exe`（免安装）。
 
 **② 在线直接用**（只想用、不想装）
 
@@ -409,9 +411,11 @@ python3 tools/build_dict.py ecdict.csv lemma.en.txt dict
 
 ---
 
-## 桌面版（macOS）
+## 桌面版（macOS / Windows）
 
-把整站打包成 `.app`，双击即用、完全离线（553MB，其中模型 237MB，站点不联网也能跑）。
+把整站打包成桌面应用，双击即用、完全离线。macOS 产物是 `.app`（553MB，其中模型 237MB）；
+Windows 是 `.exe`（414MB，模型 487MB，因为 Windows 版带的是 6 个模型而不是 4 个）。
+两种都不联网也能跑。
 
 核心思路：Electron 主进程里起一个本地 HTTP 服务，页面从 `http://127.0.0.1` 加载。**这一步是必须的，不是图方便** —— onnxruntime 的 wasm 后端要多线程就得有 `SharedArrayBuffer`，而浏览器只在 `crossOriginIsolated` 成立时放开它，条件正是文档响应带 COOP/COEP 头。`file://` 给不了响应头，Chromium 里自定义协议也拿不到跨源隔离，只有 `http://127.0.0.1`（潜在可信来源）能同时满足「发得了头」和「注册得了 Service Worker」。
 
@@ -446,9 +450,43 @@ Node 进程和那个 `.node` 的 Team ID 不一致，系统不允许加载 —�
 - **`asar: false`** —— 模型和 wasm 本来就是已压缩的二进制，asar 没有体积收益；而 240MB 的 onnx 从归档里流式读取更慢、也更容易出问题。
 - **关窗即销毁渲染进程** —— 4 个识别会话占的内存随之还回去。
 
-### 另一套打包路线
+### 另一套打包路线：Windows（已跑通）
 
-仓库里还留着一份 `electron/` + 根 `package.json` 的 electron-builder 配置（`npm run dist` 出 dmg）。思路相同，但走 packager，在本机受上面那个原生模块问题限制；要用的话先 `pnpm install` 把依赖装回来。**实际发布走的是 `desktop/build.mjs`。**
+macOS 走上面那个零依赖的 `desktop/build.mjs`；**Windows 走根目录的 electron-builder**
+（`package.json` 的 `build` 字段），在 macOS 上直接交叉编译，**不需要 wine**：
+
+```bash
+export PATH="/tmp/npmbin:$PATH"   # 只在没有系统 npm 的机器上需要，见下
+npx electron-builder --win --x64
+```
+
+产物两个，都是 x64：
+
+| 文件 | 说明 |
+|---|---|
+| `release/EchoLingo-<版本>-x64-echolingo.exe` | NSIS 安装包，约 414MB，可选安装目录、简体中文界面 |
+| `release/EchoLingo-<版本>-x64-portable.exe` | 免安装便携版，约 414MB |
+
+体积大头是随包的 6 个离线模型（`extraResources` 把 `app/` 整个映射到 `resources/site`，约 517MB）。`asar: false` 的理由同上。
+
+**几个踩过的坑：**
+
+- **`npm` 必须在 PATH 里**。electron-builder 的依赖收集器会 spawn `npm list -a --include=prod ...`，
+  找不到就报 `spawn npm ENOENT` 整个构建失败 —— 即使这个应用**没有任何运行时依赖**，
+  而且它随后会退回自己遍历 `node_modules`。本机 `node` 是从 DSH runtime 借的、不自带 npm，
+  所以在 `/tmp/npmbin` 里放了一个 shim（`node` 软链 + `npm` shell 包装指向真实的 `npm-cli.js`）。
+  装过 Node 的机器不需要这一步。
+- **不需要 wine**。electron-builder 26 打 NSIS 用的是跨平台的 `makensis`，签名那几步在没有
+  证书时会自己跳过（日志里 `signing with signtool.exe` 只是占位，没有真的签）。
+- **`main` 必须指到 `desktop/main.js`**，不是老的 `electron/main.js`。`extraResources` 的
+  `app/ → resources/site` 也必须和 `desktop/build.mjs` 保持同一套约定，否则主进程找不到站点。
+- 没有代码签名证书，Windows SmartScreen 会提示「未识别的应用」，这是预期行为。
+
+### 另一套打包路线（旧）
+
+仓库里还留着一份 `electron/` + 根 `package.json` 的 electron-builder 配置（`npm run dist:mac` 出 dmg）。
+`desktop/build.mjs` 与它思路相同，但 macOS 上后者不依赖任何 npm 包、绕开了下面这个原生模块问题。
+**macOS 实际发布走的是 `desktop/build.mjs`。**
 
 更多细节（含 `ELECTRON_RUN_AS_NODE` 这个环境坑）见 [`desktop/README.md`](desktop/README.md)。
 
