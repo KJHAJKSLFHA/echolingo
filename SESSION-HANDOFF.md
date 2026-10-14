@@ -3,7 +3,7 @@
 > **用途**：把一个很长的开发会话压缩成可恢复的记忆。新会话读完这份 + `HANDOFF.md`，
 > 应该能无缝接着干，不需要翻聊天记录。
 >
-> **最后更新**：2026-10-14 · 版本 **3.12.0** · 提交 **65db412** · 工作区干净
+> **最后更新**：2026-10-14 · 版本 **3.12.1** · 提交 **54cf884** · 工作区干净
 
 ---
 
@@ -17,7 +17,8 @@ EchoLingo（外语视频精读工具）现在有**两个学习语言模式**：�
 遮罩停在默认位置盖不住字幕），并且可以在画面上**直接拖动**调整位置。
 **拖拽区标题跟着学习模式走**：英文模式「把英语视频拖进来」、西语模式「把西班牙语视频拖进来」。
 **Windows 版首次发布**（electron-builder 打的 NSIS 安装包 + 便携版，挂在 GitHub Releases）。
-五个出口（网站 / macOS App / Windows / GitHub / 本地源码）**全部是 3.12.0 且已同步**。
+**关掉了 Netlify 注入的「Powered by Netlify」浮层**（网站首页 + 工具页，见 §13）。
+网站出口是 **3.12.1 且已部署验证**；macOS App / Windows 仍是 3.12.0。
 **目前没有进行中的任务。**
 
 ---
@@ -49,6 +50,7 @@ EchoLingo（外语视频精读工具）现在有**两个学习语言模式**：�
 | 15 | "左上角加英文模式/西班牙模式"+"单词翻译处也要出现西语翻译"+"收藏分开"+"第三个图标改成齿轮"（共 7 条，附 3 张截图） | 双模式 + 三行字幕 + 西语词卡与发音 + 收藏分区 + 齿轮图标（→ 3.10.0） |
 | 16 | "这条西语视频他没有找到字幕在哪里所以在默认位置 我希望你能改善一下 希望能更精准的确定字幕在哪 并且帮我做一个可自由控制遮罩的位置" | 检测算法换稳健标准化 + 画面直接拖动 + 真素材回归用例（→ 3.11.0） |
 | 17 | "在英文模式下显示把英语视频拖进来 相反在西班牙模式 只显示把西班牙视频拖进来" + "你现在能不能帮我做一个window版本的软件 并且上传到github" | 拖拽区标题按模式切换 + Windows 安装包/便携版发布到 GitHub Releases（→ 3.12.0） |
+| 18 | "这里的 powered by netlify 挡住了把它改成可移动的" → "你真是的 你就不能一起隐藏了嘛？宣传网站的没弄" → "可以隐藏好了 再把echoling的网站也隐藏掉" | 关掉 Netlify 注入的浮层（改不动，只能藏）；BiliLyu 两页 + EchoLingo 两页都加上 `<head>` 同步标记（→ 3.12.1） |
 
 ### 关键偏好
 
@@ -326,6 +328,71 @@ change 和 variance 则几乎没有区分度。权重重排后把 edge 当主特
 走的是**真实的导入链路**（`S.file` / `videoWidth` / localStorage 全是真的），几秒钟跑完。
 注意：`Page.reload` 会清空 file input，没有 `src` 时 `#player:not([src])` 的
 `display:none` 会生效、遮罩量不到位置，**所以刷新后必须重新导一次视频**。
+
+---
+
+## 5.4 关掉 Netlify「Powered by Netlify」浮层（3.12.1，重要）
+
+**它是什么**：Netlify 给免费站自动注入的 HUD，**不是我们页面的元素**。
+注入形式是页面末尾（在 `</html>` **之后**）的
+`<script async src="/.netlify/scripts/hud?variant=public" data-nf-variant="public" ...>`。
+它挂一个 `position:fixed; bottom:0; right:0; z-index:2147483645`（21 亿）、
+**202×64** 的跨域 iframe，钉死在右下角，会盖住页面右下角的内容。
+
+**为什么只能关、不能挪**：翻遍它 34 KB 的源码，**没有任何拖动实现**
+（无 `pointerdown`/`mousedown`/`touchstart`，也没有动态改 `left`/`top` 的代码），
+位置是写死在注入 iframe 的 inline style 上的；而且是**跨域 iframe**，
+我们页面的 JS 碰不到它内部，没法给它加拖拽。它自带的按钮只有隐藏/最小化/关闭/看站点工具。
+
+**关掉的机制**：HUD 启动时**第一件事**是读 `localStorage` 的
+`nl-hud:<variant>:v1`，读到 `"hidden"` 就 `return` —— **连 iframe 都不创建**
+（源码里 `const saved = readState(); if (saved === "hidden") return;`）。
+它自带那个「隐藏」按钮走 `postMessage` 写的也是同一个 key。
+我们改不了跨域 iframe，但**能写自己站的 `localStorage`**，所以在两个页面的
+`<head>` 里同步写好标记，早于 `async` 的 HUD 脚本执行：
+
+```js
+try {
+  localStorage.setItem('nl-hud:public:v1', 'hidden');        // 公开访客看到的徽章
+  localStorage.setItem('nl-hud:owner-private:v1', 'hidden'); // 站点所有者自己访问时的工具条
+} catch (e) {}
+```
+
+两页都改了：`index.html`（官网首页，行 40-41）与 `app/index.html`（工具页，行 42-43）。
+
+**① 必须放在 `<head>` 里、且在任何 `async`/`defer` 脚本之前。**
+HUD 脚本是 `async` 的，谁先跑不确定；写晚了徽章可能已经挂上。
+`<link rel="stylesheet">` 在它前面**没关系**（CSS 不执行 JS，只阻塞渲染）。
+
+**② 必须用 `try/catch`。** 隐私模式下 `localStorage.setItem` 会抛异常，
+不能因为一个徽章把整页弄坏。
+
+**③ 这是治标不是治本。** 标记存在**访客自己的浏览器**里，靠我们页面的 JS 每次写入。
+Netlify 哪天改 key 名或机制，就得跟着改。真要治本得去掉那个浮层，那不在我们手里。
+
+**④ 排查时最容易踩的坑：标记字符串在注释里也出现过。**
+`nl-hud:public:v1` 这几个字在代码上方的**注释**里也写着，
+所以门禁如果只 `indexOf('nl-hud:public:v1')`，把真正的 `setItem` 调用删掉、
+注释还在，检查会**误判为通过**。两个门禁都必须匹配
+`setItem('nl-hud:public:v1'` 这个**调用**（已用负向测试验证）。
+
+**⑤ 验证时注意 `</body>` / `</head>` 会先出现在注释里。**
+`index.html` 第 13 行的注释里就写着「下面的 fill() 在 `</body>` 之前同步跑完」，
+用 `indexOf('</body>')` 会命中这句注释（位置 763）而不是真正的标签（行 645）。
+写负向测试要用 `lastIndexOf` 或按行号定位。
+
+**⑥ 线上徽章没消失先怀疑缓存/旧标签页，别急着改代码。**
+本次用户反馈「宣传页徽章没弄」，实测线上文件字节与本地**完全一致**、
+标记位置正确、连拉 10 次 ETag 不变、全新档案与旧档案都复现不出来、
+用 CDP 把 HUD 脚本**故意拖慢 2.5 秒**也复现不出来 ——
+最后是用户浏览器里**部署前就开着的旧标签页**，刷新即可。
+
+**⑦ 两页的 variant 都是 `public`**（curl 匿名访问拿到的），
+但**站长自己登录时 Netlify 会给 `owner-private`**（工具条而非徽章）。
+这个场景 headless 模拟不了，所以两个 key **都要写**。
+
+**入口**：`tools/check-site-i18n.mjs` 与 `tools/check-app-i18n.mjs` 各加了一条
+HUD 标记门禁（存在性 / 在 `</head>` 内 / 其前无 `async`·`defer` 脚本 / 有 `try/catch`）。
 
 ---
 
