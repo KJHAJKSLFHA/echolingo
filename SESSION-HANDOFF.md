@@ -3,7 +3,7 @@
 > **用途**：把一个很长的开发会话压缩成可恢复的记忆。新会话读完这份 + `HANDOFF.md`，
 > 应该能无缝接着干，不需要翻聊天记录。
 >
-> **最后更新**：2026-10-13 · 版本 **3.11.0** · 提交 **396ac76**（代码） · 工作区干净
+> **最后更新**：2026-10-14 · 版本 **3.12.0** · 提交 **65db412** · 工作区干净
 
 ---
 
@@ -15,8 +15,10 @@ EchoLingo（外语视频精读工具）现在有**两个学习语言模式**：�
 收藏也按模式分开（英语模式只看英语收藏，西语模式只看西语收藏）。
 **画面字幕遮罩**的自动定位这一轮换成了稳健算法（旧算法在那条真西语 Vlog 上直接失败、
 遮罩停在默认位置盖不住字幕），并且可以在画面上**直接拖动**调整位置。
-四个出口（网站 / macOS App / GitHub / 本地源码）**全部是 3.11.0 且已同步**。
-上一轮用**真的西语 Vlog**（914MB / 370 秒 / 4K）端到端验收通过。**目前没有进行中的任务。**
+**拖拽区标题跟着学习模式走**：英文模式「把英语视频拖进来」、西语模式「把西班牙语视频拖进来」。
+**Windows 版首次发布**（electron-builder 打的 NSIS 安装包 + 便携版，挂在 GitHub Releases）。
+五个出口（网站 / macOS App / Windows / GitHub / 本地源码）**全部是 3.12.0 且已同步**。
+**目前没有进行中的任务。**
 
 ---
 
@@ -46,6 +48,7 @@ EchoLingo（外语视频精读工具）现在有**两个学习语言模式**：�
 | 14 | "读 SESSION-HANDOFF.md 然后继续" | 补官网首页西语版（→ 3.9.0） |
 | 15 | "左上角加英文模式/西班牙模式"+"单词翻译处也要出现西语翻译"+"收藏分开"+"第三个图标改成齿轮"（共 7 条，附 3 张截图） | 双模式 + 三行字幕 + 西语词卡与发音 + 收藏分区 + 齿轮图标（→ 3.10.0） |
 | 16 | "这条西语视频他没有找到字幕在哪里所以在默认位置 我希望你能改善一下 希望能更精准的确定字幕在哪 并且帮我做一个可自由控制遮罩的位置" | 检测算法换稳健标准化 + 画面直接拖动 + 真素材回归用例（→ 3.11.0） |
+| 17 | "在英文模式下显示把英语视频拖进来 相反在西班牙模式 只显示把西班牙视频拖进来" + "你现在能不能帮我做一个window版本的软件 并且上传到github" | 拖拽区标题按模式切换 + Windows 安装包/便携版发布到 GitHub Releases（→ 3.12.0） |
 
 ### 关键偏好
 
@@ -114,18 +117,23 @@ EchoLingo（外语视频精读工具）现在有**两个学习语言模式**：�
 - [x] **真西语 Vlog 端到端验收**（914MB 4K 视频，39.7 秒跑完，32 句三行齐全）（→ 3.10.0）
 - [x] **遮罩自动定位换成稳健算法**：中位数/MAD 标准化 + 以 edge 为主，真素材从「返回 null」变成 86.1%~97.2%（→ 3.11.0）
 - [x] **在画面上直接拖动遮罩**：拖上下边缘改高度、拖中间整体移动、画面右上角「完成」出口、Esc 退出（→ 3.11.0）
+- [x] **拖拽区标题按模式切换**：英文模式「把英语视频拖进来」/ 西语模式「把西班牙语视频拖进来」，三语界面都跟着翻译；
+      顺带修了「切回英语模式标题不复原」的隐藏 bug（→ 3.12.0）
+- [x] **Windows 版首次发布**：electron-builder 打 NSIS 安装包 + 便携版，414 MB ×2，
+      挂到 GitHub Releases v3.12.0（→ 3.12.0）
 - [x] 交接文档 `HANDOFF.md` + 本文件
 
 ---
 
 ## 5. 当前状态快照
 
-**四个出口（全部 3.11.0 / 同一份代码）**
+**五个出口（全部 3.12.0 / 同一份代码）**
 
 | 出口 | 位置 | 备注 |
 |---|---|---|
 | 网站 | https://echoling.netlify.app | 官网 `/`，工具 `/app/`；账号 `orion510ike@gmail.com` |
 | macOS App | `/Applications/EchoLingo.app` | **804 MB**，模型内置，双击即用 |
+| Windows | [GitHub Releases v3.12.0](https://github.com/KJHAJKSLFHA/echolingo/releases/tag/v3.12.0) | 安装包 413942279 B + 便携版 413716392 B，x64 |
 | GitHub | github.com/KJHAJKSLFHA/echolingo | 公开，`main` 分支 |
 | 本地源码 | 本目录 | `app/js/app.js` 的 `APP_VER` |
 
@@ -152,6 +160,21 @@ whisper-base / tiny（多语言，西语用，78+43）、opus-mt-en-zh（117）�
 - 面板收起 857 → 1378 px；刷新后保持
 - 顶栏在 1440px 三语都不溢出；380px 时加了 ES 按钮的代价从 40px 降到 5px
 
+**3.12.0 的验证（都实测过）**
+- `bench/test-dropzone-title.mjs` **5 个状态全过**：英语模式+中文界面 →「把英语视频拖进来」／
+  西语模式+中文 →「把西班牙语视频拖进来」／西语模式+英文界面 →「Drop a Spanish video here」／
+  西语模式+西语界面 →「Arrastra aquí tu vídeo en español」／切回英语模式 → key 与文案都复原。
+  脚本会**先把 `localStorage['echolingo.lang']` 钉成 `zh` 再跑**，否则复用 profile 时断言会随机偏移
+- 英语回归 `bench/test-english-regression.mjs`：三语界面漏翻样本都是 `[]`，识别 + 翻译 **4.2 秒**出正确结果，`异常: []`
+- `bench/test-mode.mjs`：模式开关全过，无水平溢出（按钮 64x23 / 68x23）
+- `tools/check-app-i18n.mjs`：三语各 **307** 条、markup/代码引用 **279** 个 key 全命中
+- `tools/check-site-i18n.mjs`：三语各 **81** 条、markup 绑定 **79** 个 key 全命中
+- 线上西语版实测 `bench/test-live-es.mjs`：三语界面全对、漏翻 `[]`，西语识别 + 翻译 **46.3 秒**（首次要下载缓存模型）
+- Windows 包内容核对：解包后 `resources/site` **517 MB**，6 个模型齐全，包内 `APP_VER` 与
+  `__ECHOLINGO_VER__` 都是 3.12.0
+- macOS App 重打后实测可启动：`pgrep` 有进程、`curl 127.0.0.1:8731/index.html` 返回 200、
+  COOP/COEP 三个头都在、截图里拖拽区标题在西语模式变长（标题带浅像素 137 → 191）
+
 **双模式的关键实现落点（改之前先看这里）**
 
 | 要做的事 | 落点 |
@@ -166,6 +189,7 @@ whisper-base / tiny（多语言，西语用，78+43）、opus-mt-en-zh（117）�
 | 收藏分区 | 条目带 `favLang`，列表与角标都按 `getMode()` 筛 |
 | 遮罩自动定位 | `subtitle-mask.js` `scoreRows()` / `bandFromScore()`（纯函数，可离线重放）；采样入口 `app.js` `runMaskSeekScan()`（抽 14 帧）/ `startMaskLiveDetect()`（播放中采样） |
 | 遮罩手动拖动 | `subtitle-mask.js` `createMask({ onBand })`：编辑层 `setEditing()` / 抓手 `onEditDown|Move|Up`；`app.js` `setMaskAdjust()` / `onMaskBand()` |
+| 拖拽区标题 | `app.js` `applyDropzoneTitle()`（挂在 `applyModeView()`）；key 是 `dz.title` / `dz.titleEs`。⚠️ 选择器**必须写成 `[data-i18n="dz.title"], [data-i18n="dz.titleEs"]`** —— 这个函数自己会改 `dataset.i18n`，写死一个 key 就会在改完之后再也选不中自己（见 5.2） |
 
 ---
 
@@ -188,6 +212,45 @@ whisper-base / tiny（多语言，西语用，78+43）、opus-mt-en-zh（117）�
 再往下测才看清根因 —— **380/360 及以上是按钮的锅（现已修好），
 340 以下则是这个页面的固有最小宽度问题，加不加按钮都一样溢**。
 只测一个版本、没有对照，很容易得出"是我改坏的"或"跟我没关系"的错误结论。
+
+---
+
+## 5.1.b 3.12.0 这一轮踩到的坑（Windows 打包 + 拖拽区标题）
+
+**① 「改自己的 key」的选择器会把自己弄丢。** `applyDropzoneTitle()` 一开始写成
+`$('[data-i18n="dz.title"]')`，而函数体里又会把 `el.dataset.i18n` 改成 `dz.titleEs`。
+于是**第一次切换（en → es）正常，切回来（es → en）静默失效** —— 选择器再也选不中那个
+元素了，标题就永远停在「把西班牙语视频拖进来」。不报错、不抛异常。
+**教训：一个元素如果会改自己的 `dataset.i18n`，所有找它的选择器都要把所有可能的 key 列进去。**
+这个 bug 是让 `bench/test-dropzone-title.mjs` 卡在第 5 步才暴露的；人工点两下非常容易漏，
+因为**第一次点是好的，错在切回来**。
+
+**② electron-builder 会 spawn `npm`，没有 npm 就整个构建失败。**
+报错是 `⨯ Node module collector spawn (npm ["list","-a","--include","prod",...]) failed: spawn npm ENOENT`。
+哪怕这个应用**一个运行时依赖都没有**（随后它会自己退回遍历 `node_modules` 并打印
+`no node modules returned while searching directories`），这一步照样要过。
+本机的 `node` 是从 DSH runtime 借的、**不自带 npm**，所以在 `/tmp/npmbin` 放了个 shim：
+`node` 软链 + `npm` 这个 shell 包装指向真实的 `npm-cli.js`，构建时 `export PATH="/tmp/npmbin:$PATH"`。
+⚠️ 复制 `npm-cli.js` 时它的 `require('../lib/cli.js')` 是**相对它自己所在目录**解析的，
+只拷 bin 不拷 lib 会报 `Cannot find module '../lib/cli.js'`。
+
+**③ macOS 上打 Windows 包不需要 wine。** electron-builder 26 的 NSIS 用的是跨平台
+`makensis`；日志里那几行 `signing with signtool.exe` 在没有证书时只是占位，没有真的签。
+产物直接可用。
+
+**④ `ELECTRON_RUN_AS_NODE=1` 这个坑又踩了一次。** 我的工具 shell 里导出着这个变量，
+于是 `open -a EchoLingo.app` 和直接跑二进制**都会让 Electron 以纯 Node 模式启动**：
+不报错、不打印、秒退。我一度以为是我改 `Info.plist` / `--deep` 重签把 App 弄坏了，
+还重新打包了一遍 —— 其实 App 一直是好的。**在启动任何 Electron 之前先 `env -u ELECTRON_RUN_AS_NODE`。**
+验证 App 真的起来的办法：`pgrep -f "EchoLingo.app/Contents/MacOS"` + `curl 127.0.0.1:8731/index.html`。
+
+**⑤ macOS App 更新别手工拷文件进 bundle。** 直接 `cp` 进 `/Applications/EchoLingo.app` 再
+`codesign --deep` 重签，看起来能过 `codesign --verify`，但 `CFBundleShortVersionString` 还是旧的。
+**正确做法：`node desktop/build.mjs` 重新打一份，再 `ditto dist/EchoLingo.app /Applications/EchoLingo.app`。**
+
+**⑥ Netlify 是 CLI 手动部署，不是 Git 自动部署。** 推 GitHub **不会**更新网站。
+要跑 `bash desktop/.tools/deploy.sh`（它先 `cp -c` 拼一个 `.deploy/` 暂存目录再
+`netlify deploy --dir=.deploy --prod`）。我一开始以为 push 完等一会儿就好，实测线上还是 3.11.0。
 
 ---
 
@@ -273,6 +336,10 @@ change 和 variance 则几乎没有区分度。权重重排后把 edge 当主特
 2b. ~~遮罩自动定位不准 + 不能在画面上拖动~~ —— 已完成（3.11.0）。
    剩下的可选打磨：遮罩位置目前是**全局一份**（`settings.mask`），不是每个视频各记一份；
    如果用户换视频频繁地手动调，可以考虑按视频文件名存。
+2c. ~~拖拽区标题按模式切换 + Windows 版发布~~ —— 已完成（3.12.0）。
+   Windows 包没有代码签名证书，SmartScreen 会提示「未识别的应用」，用户需点「更多信息 → 仍要运行」；
+   想消掉这个提示只能买证书。另外 Windows 版目前**只在 macOS 上交叉编译、没有在真 Windows 机器上跑过**，
+   如果用户反馈起不来，第一件事是让他在 Windows 上跑一次并回报错误。
 3. **西语识别质量的天花板是多语言 `whisper-base`。** 真 Vlog 上有几句确实听错
    （`lago Argentino` → `lago alantino`、`compartir` → `compartible`）。
    这是 base 模型 + 有背景音乐的口播的**固有限制，不是链路 bug**。
@@ -296,18 +363,21 @@ change 和 variance 则几乎没有区分度。权重重排后把 edge 当主特
 
 - **不要相信"应该没问题"**：改完必须实测。特别是碰了 `asr-engine.js` / `mt.js`
   这类英语链路也在用的文件，**一定要跑英语回归**（`bench/test-english-regression.mjs`）
-- **改完代码要同步四处**：本地 → `desktop/build.mjs` 重新打包 → 装到 `/Applications`
-  → `deploy.sh` 部署 → `push-loop.sh` 推送。**最容易漏的是"装到 /Applications"**
-- **版本号三处要一起改**：`app/js/app.js` 的 `APP_VER`、`app/index.html` 的
-  `__ECHOLINGO_VER__`、`app/sw.js` 的 `VERSION`（sw 再 +1）。
-  **官网首页 `index.html` 不带版本号**，不用改（改了也没人读）。
-- **改动影响哪几个出口要先想清楚**：`app/` 下的东西会进 macOS App 包
-  （`desktop/build.mjs` 只拷 `app/`），但**根目录的官网首页不会**。
-  只改官网首页时，打包那一步可以跳过；只改 `app/` 时，官网 `/` 不用动，
-  但 `/app/` 会跟着变。
-- 长任务放后台跑（下载/推送/部署），不要让它阻塞对话
+- **改完代码要同步五处**：本地 → `desktop/build.mjs` 重新打包 → 装到 `/Applications`
+  → `deploy.sh` 部署网站 → `push-loop.sh` 推送 → **（有 Windows 版之后）`npx electron-builder --win --x64`
+  重打 Windows 包**。**最容易漏的是"装到 /Applications"**，其次是 Netlify 那步
+  —— **推送不会自动更新网站，必须手动跑 `deploy.sh`**（实测教训，见 5.1.b ⑥）。
+- **版本号五处要一起改**：`app/js/app.js` 的 `APP_VER`、`app/index.html` 的
+  `__ECHOLINGO_VER__`、`app/sw.js` 的 `VERSION`（sw 再 +1）、`package.json` 的 `version`
+  （electron-builder 用它命名产物）。**官网首页 `index.html` 不带版本号**，不用改（改了也没人读）。
+- **改 `app/` 里的东西会同时进 macOS App、Windows 包和网站 `/app/`**，
+  只改根目录官网首页时打包那几步可以跳过。
+- **启动 Electron 前先 `env -u ELECTRON_RUN_AS_NODE`** —— 本机工具 shell 里导出着这个变量，
+  不清掉的话 Electron 会以纯 Node 模式秒退，看起来像"App 坏了"（见 5.1.b ④）。
+- 长任务放后台跑（下载/打包/推送/部署），不要让它阻塞对话
 - 用户要求"先看效果"时，**做真实预览**（注入运行中的 App 再截图），不要用 PS 假图
 - 判断视觉效果**要用像素测量**，别只看放大截图（我曾因此误判"模糊没生效"，白查好几轮）
+- **本机会话读不了图片**（模型不声明图像输入），所以"看图"只能靠 PIL 量像素分布来判断
 
 ---
 
@@ -317,11 +387,17 @@ change 和 variance 则几乎没有区分度。权重重排后把 edge 当主特
 # 跑起来看
 python3 tools/serve.py 8765 --open       # 官网 / ，工具 /app/
 
-# 改完代码 → 四处同步
-cd desktop && node build.mjs             # 打包
+# 改完代码 → 五处同步
+cd desktop && node build.mjs             # 打包 macOS
 ditto dist/EchoLingo.app /Applications/EchoLingo.app   # ← 别漏这步
-bash desktop/.tools/deploy.sh            # 部署网站（几秒）
+export PATH="/tmp/npmbin:$PATH"          # npm shim，见 5.1.b ②
+npx electron-builder --win --x64         # 打包 Windows → release/*.exe
+bash desktop/.tools/deploy.sh            # 部署网站（几秒；push 不会自动部署！）
 bash desktop/.tools/push-loop.sh         # 推 GitHub（带重试）
+
+# 看 App 是否真的起来了（ELECTRON_RUN_AS_NODE 必须先清掉）
+env -u ELECTRON_RUN_AS_NODE open -a /Applications/EchoLingo.app
+pgrep -f "EchoLingo.app/Contents/MacOS" && curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8731/index.html
 
 # 测试（各脚本自带 CDP 端口，互不相撞；端口对不上时以脚本里的默认值为准）
 node bench/test-english-regression.mjs 8910   # 英语回归（改过共享代码必跑）
@@ -331,6 +407,7 @@ node bench/test-mode-redo.mjs 8910 9339       # 切模式确认弹窗（取消 /
 node bench/test-three-line.mjs 8910 9340      # 西语三行字幕 + 三语开关
 node bench/test-es-wordcard.mjs 8910 9342     # 西语词卡中文释义 + 西语语音 + 音色按模式
 node bench/test-fav-partition.mjs 8910 9344   # 收藏按模式分区
+node bench/test-dropzone-title.mjs 8910 9365  # 拖拽区标题按模式切换 + 三语界面（5 个状态，5 项）
 node bench/test-settings-gear.mjs 8910 9346   # 齿轮图标（像素测量：环带覆盖 / 齿段宽度 / 与太阳 IoU）
 node bench/test-band-detect.mjs               # 遮罩检测算法（纯 Node：合成帧 + 真实剖面重放，16 项）
 node bench/test-mask-adjust.mjs 8910 9352     # 画面上拖动遮罩（现场录小视频走真实导入，33 项）
