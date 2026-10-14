@@ -146,105 +146,164 @@ for (const key of HUD_KEYS) {
 }
 if (bad === 0) console.log(`✓ Netlify HUD 隐藏标记：${HUD_KEYS.length} 条 key，位置正确且已兜底`);
 
-// 7. 海水背景 + 液态玻璃（外观改造的守护规则）
+// 7. 海水背景 + 液态玻璃 + 双主题（外观改造的守护规则）
 //
-// 为什么这些必须自动检查：这一层改造的正确性完全依赖几个「看不出来但一
-// 破坏就出事」的性质 —— 照片没加载会静默变成纯色、动画不尊重
-// prefers-reduced-motion 会让前庭障碍用户难受、玻璃层若被加到 pre 上会
-// 让代码块发灰、文字色若被调暗在照片上就不可读。这些都不会报错。
+// 为什么这些必须自动检查：这一层的正确性完全依赖几个「看不出来但一破坏
+// 就出事」的性质 —— 照片没加载会静默变纯色、动画不尊重
+// prefers-reduced-motion 会让前庭障碍用户难受、两套主题令牌一旦不对齐
+// 就会出现「某个面板在浅色下还是深色」这种不报错只难看的问题、
+// 文字色若被调暗在照片上就不可读。这些都不会报错。
 {
-  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const css = html.slice(html.search(/^<style>/m), html.indexOf('\n</style>'));
   let n = 0;
 
-  // 7.1 背景三层结构必须在位，且 z-index 为负（否则会盖住内容）
+  // 7.1 背景两层必须在位且 z-index 为负（否则会盖住内容）
   for (const [cls, z] of [['.sea-bg', '-2'], ['.sea-veil', '-1']]) {
     const re = new RegExp(`\\${cls}\\s*\\{[^}]*z-index:\\s*${z}`, 's');
     if (!re.test(css)) { console.error(`✗ 缺少 ${cls} 层或 z-index 不是 ${z}`); bad++; }
     else n++;
   }
-  // 图片层挂在 ::before 上（因为有 Ken Burns transform）
   if (!/\.sea-bg::before\s*\{/.test(css)) { console.error('✗ 缺少 .sea-bg::before 图片层'); bad++; } else n++;
+  // 兜底底色：图没加载完 / 失败时不能露白底
+  if (!/\.sea-bg\s*\{[^}]*background:\s*var\(--bg-solid\)/.test(css)) {
+    console.error('✗ .sea-bg 缺少兜底底色（图片未加载时会露出白底）'); bad++;
+  } else n++;
 
-  // 7.2 三档背景图必须存在且被 CSS 引用 —— 图片 404 时页面会静默变成纯色
-  const wantImgs = ['sea-bg-800.jpg', 'sea-bg-1280.jpg', 'sea-bg-1920.jpg'];
-  for (const f of wantImgs) {
+  // 7.2 两套主题 × 三档尺寸 = 6 张背景图，都必须存在且被 CSS 引用。
+  //     图片 404 时页面**不会报错**，只会静默变成纯色 —— 最难查的一类问题。
+  const seaImgs = [];
+  for (const theme of ['dark', 'light']) for (const w of [800, 1280, 1920]) seaImgs.push(`sea-${theme}-${w}.jpg`);
+  for (const f of seaImgs) {
     if (!css.includes(`url('shots/${f}')`)) {
-      console.error(`✗ CSS 未引用 shots/${f}（缺这一档会在某些宽度静默变纯色）`); bad++;
+      console.error(`✗ CSS 未引用 shots/${f}`); bad++;
       continue;
     }
     if (!existsSync(join(root, 'shots', f))) {
       console.error(`✗ 文件 shots/${f} 不存在（页面不会报错，只会变成纯色背景）`); bad++;
     } else n++;
   }
-  // 兜底底色：图没加载完 / 加载失败时不能是白屏
-  if (!/\.sea-bg\s*\{[^}]*background:\s*#/.test(css)) {
-    console.error('✗ .sea-bg 缺少兜底底色（图片未加载时会露出白底）'); bad++;
-  } else n++;
 
-  // 7.3 Ken Burns 动画 + prefers-reduced-motion 关闭开关
+  // 7.3 Ken Burns + prefers-reduced-motion 关闭开关（无障碍硬要求）
   if (!/@keyframes\s+kenburns\s*\{/.test(css)) { console.error('✗ 缺少 @keyframes kenburns'); bad++; } else n++;
   const rm = css.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/);
   if (!rm || !/\.sea-bg::before\s*\{[^}]*animation:\s*none/.test(rm[1])) {
     console.error('✗ prefers-reduced-motion: reduce 下没有关掉背景动画（无障碍问题）'); bad++;
   } else n++;
-  // 动画必须有 will-change 或 transform，否则可能不合成、卡顿
   if (!/\.sea-bg::before\s*\{[^}]*will-change:\s*transform/.test(css)) {
     console.error('✗ .sea-bg::before 缺少 will-change: transform（动画会走主线程）'); bad++;
   } else n++;
 
-  // 7.4 scrim 的负 inset 不能撑出横向滚动条。
-  //     hero 的 .wrap 已经贴满视口，它的 scrim 只要往左右扩就会溢出
-  //     （实测扩 14px 就让 390/360px 的 scrollWidth 多 14px）。
-  const heroScrim = css.match(/\.hero\.scrim::before\s*\{([^}]*)\}/);
-  if (!heroScrim) { console.error('✗ 缺少 .hero.scrim::before 规则'); bad++; }
-  else {
-    const ins = heroScrim[1].match(/inset:\s*(-?[\d.]+)px\s+(-?[\d.]+)px/);
-    if (!ins) { console.error('✗ .hero.scrim::before 的 inset 不是两值写法，无法校验'); bad++; }
-    else if (parseFloat(ins[2]) < 0) {
-      console.error(`✗ .hero.scrim::before 横向 inset 是 ${ins[2]}px（负值），会撑出横向滚动条`); bad++;
+  // 7.4 不许再有「局部 scrim」色块。
+  //     上一版在 hero / 章节标题下垫了 radial 半透明黑，实测形成一条 1144px 宽、
+  //     边缘亮度跳变 16 级的硬边暗块，看起来像贴了一张脏卡片（用户明确反馈
+  //     「黑色的影子特别奇怪」）。对比度改为做进「照片先压暗 + 连续渐变压暗层」。
+  if (/\.scrim\s*\{|class="[^"]*\bscrim\b/.test(html)) {
+    console.error('✗ 又出现了 .scrim 局部压暗色块（会产生硬边暗影，已被用户否掉）'); bad++;
+  } else n++;
+
+  // 7.5 两套主题的令牌 key 必须完全一致。
+  //     少一个 key 不会报错，只会让某个面板在浅色下仍用深色值 —— 静默不一致。
+  const grab = (sel) => {
+    const i = css.indexOf(sel);
+    if (i < 0) return null;
+    const a = css.indexOf('{', i);
+    let d = 0;
+    for (let k = a; k < css.length; k++) {
+      if (css[k] === '{') d++;
+      else if (css[k] === '}') { d--; if (d === 0) return css.slice(a, k + 1); }
+    }
+    return null;
+  };
+  const darkBlk = grab(':root, :root[data-theme="dark"]');
+  const lightBlk = grab(':root[data-theme="light"]');
+  if (!darkBlk || !lightBlk) {
+    console.error('✗ 找不到深色或浅色主题令牌块'); bad++;
+  } else {
+    const decls = (b) => new Set([...b.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]));
+    const dk = decls(darkBlk), lt = decls(lightBlk);
+    // 尺寸类令牌只在深色块里定义就够了（两套共用），排除它们
+    const shared = new Set(['--radius', '--maxw', '--glass-blur', '--glass-sat']);
+    const onlyD = [...dk].filter((k) => !lt.has(k) && !shared.has(k));
+    const onlyL = [...lt].filter((k) => !dk.has(k) && !shared.has(k));
+    if (onlyD.length) { console.error(`✗ 主题令牌只在 dark 里：${onlyD.join(', ')}`); bad++; }
+    if (onlyL.length) { console.error(`✗ 主题令牌只在 light 里：${onlyL.join(', ')}`); bad++; }
+    if (!onlyD.length && !onlyL.length) n++;
+  }
+
+  // 7.6 规则体里不许有硬编码颜色（令牌定义行除外，它们本来就要写字面值）。
+  //     硬编码色会让主题切换时某处不跟着变 —— 最常见的是「浅色下这块还是黑的」。
+  {
+    const body = css.replace(/:root[^{]*\{[^}]*\}/g, '');
+    const hits = [...body.matchAll(/^\s*[^@/\n][^\n]*?:[^;\n]*(#[0-9a-fA-F]{3,8}\b|\brgba?\()/gm)]
+      .filter((m) => !/^\s*--/.test(m[0]))
+      .filter((m) => !/data:image\/svg/.test(m[0]));
+    if (hits.length) {
+      console.error(`✗ 规则体里有 ${hits.length} 处硬编码颜色（切主题时不会跟着变）`);
+      hits.slice(0, 3).forEach((h) => console.error('    ' + h[0].trim().slice(0, 90)));
+      bad++;
     } else n++;
   }
 
-  // 7.5 液态玻璃令牌齐全，且 pre 上不许用玻璃（代码块发灰难读）
-  for (const t of ['--glass-bg', '--glass-bg-strong', '--glass-blur', '--glass-edge', '--glass-line']) {
+  // 7.7 玻璃令牌齐全 + 退化方案
+  for (const t of ['--glass-bg', '--glass-bg-strong', '--glass-bg-soft', '--glass-edge', '--glass-line', '--glass-shadow']) {
     if (!css.includes(t + ':')) { console.error(`✗ 缺少玻璃令牌 ${t}`); bad++; } else n++;
   }
-  for (const sel of ['header', '.card', '.btn', '.badge', '.lang-seg', '.shot']) {
-    if (new RegExp(`\\${sel}\\s*\\{[^}]*backdrop-filter`, 's').test(css)) n++;
-  }
-  if (/pre\s*\{[^}]*backdrop-filter/.test(css) === false) {
-    // pre 可以有一点点模糊，但背景必须足够实（alpha ≥ .6），否则代码难读
-    const preBg = css.match(/pre\s*\{[^}]*background:\s*rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([\d.]+)\s*\)/s);
-    if (preBg && parseFloat(preBg[1]) < 0.6) {
-      console.error(`✗ pre 的背景 alpha 只有 ${preBg[1]}，代码压在海水上会难读（应 ≥ .6）`); bad++;
-    } else n++;
-  } else n++;
-  // 不支持 backdrop-filter 的浏览器必须有退化方案，不能糊成一片
   if (!/@supports not \(\(backdrop-filter/.test(css)) {
     console.error('✗ 缺少 backdrop-filter 不支持时的退化方案（老浏览器会看不清）'); bad++;
   } else n++;
 
-  // 7.6 文字色不能在照片上失去对比度：按 WCAG 相对亮度算，
-  //     底色取「压暗后最亮的海水」（由脚本扫描 1280x720 照片得出）。
-  //     这里用固定基准色，避免门禁依赖图片解码库。
+  // 7.8 两个主题下、正文区与玻璃卡片上的文字都必须 ≥4.5:1。
+  //     底色取「该主题下最坏的合成底」（由脚本扫描照片 × 压暗层得出）。
   const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
     return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
   const ratio = (a, b) => { const la = lum(a), lb = lum(b);
     return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05); };
-  const hex2rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
-  // 正文区最亮合成底（实测值，见 index.html 注释）
-  const WORST_BG = [24, 56, 69];
-  const textTokens = ['--text', '--text-2', '--text-3', '--brand'];
-  for (const t of textTokens) {
-    const m = css.match(new RegExp(`${t}:\\s*(#[0-9a-fA-F]{6})`));
-    if (!m) { console.error(`✗ 找不到 ${t} 的十六进制色值`); bad++; continue; }
-    const r = ratio(hex2rgb(m[1]), WORST_BG);
-    if (r < 4.5) {
-      console.error(`✗ ${t} ${m[1]} 在最亮海面上只有 ${r.toFixed(2)}:1（需 ≥4.5:1）`); bad++;
+  const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  // 深色最坏底 = 压暗后最亮的海水；浅色最坏底 = 白纱后最亮的水面附近
+  const WORST = { dark: [24, 56, 69], light: [251, 253, 254] };
+  for (const [theme, blk] of [['dark', darkBlk], ['light', lightBlk]]) {
+    for (const t of ['--text', '--text-2', '--text-3', '--brand']) {
+      const m = blk && blk.match(new RegExp(`${t}:\\s*(#[0-9a-fA-F]{6})`));
+      if (!m) { console.error(`✗ ${theme} 主题缺少 ${t}`); bad++; continue; }
+      const r = ratio(rgb(m[1]), WORST[theme]);
+      if (r < 4.5) {
+        console.error(`✗ ${theme} 主题 ${t} ${m[1]} 在最坏底色上只有 ${r.toFixed(2)}:1（需 ≥4.5:1）`); bad++;
+      } else n++;
+    }
+  }
+
+  // 7.9 主题三处状态都必须在 <head> 的同步预涂脚本里设置好，
+  //     否则首帧会先按深色画一遍再跳浅色（肉眼看到「闪一下」）。
+  {
+    const headEnd = html.indexOf('\n</head>');
+    // 用行首的 <style> —— 注释里可能正提到过这个标签名（这个检查自己就被坑过一次）
+    const styleAt = html.search(/^<style>/m);
+    const pre = html.slice(0, Math.min(headEnd < 0 ? html.length : headEnd, styleAt < 0 ? html.length : styleAt));
+    for (const [what, re] of [
+      ['data-theme-pref', /dataset\.themePref\s*=/],
+      ['data-theme', /dataset\.theme\s*=/],
+      ['localStorage 读主题', /getItem\('echolingo\.site\.theme'\)/],
+    ]) {
+      if (!re.test(pre)) {
+        console.error(`✗ <head> 预涂脚本里没有设置 ${what}（会闪一帧）`); bad++;
+      } else n++;
+    }
+  }
+  // 主题图标：三颗 SVG 都要真的在按钮里。
+  // 注意不能只搜 'i-moon' —— CSS 规则里也有这几个字，删掉 SVG 上的 class 仍然能通过
+  //（这个检查自己被这样骗过一次），所以必须匹配 <svg class="i-xxx"。
+  for (const ic of ['i-auto', 'i-sun', 'i-moon']) {
+    if (!new RegExp(`<svg[^>]*class="${ic}"`).test(html)) {
+      console.error(`✗ 缺少主题图标 SVG ${ic}（只写进 CSS 不算）`); bad++;
+    } else n++;
+  }
+  for (const p of ['auto', 'light', 'dark']) {
+    if (!new RegExp(`data-theme-pref="${p}"\\]\\s+#btnTheme`).test(css)) {
+      console.error(`✗ 缺少 data-theme-pref="${p}" 时的图标显示规则`); bad++;
     } else n++;
   }
 
-  if (bad === 0) console.log(`✓ 海水背景 + 液态玻璃：${n} 项检查通过`);
+  if (bad === 0) console.log(`✓ 海水背景 + 液态玻璃 + 双主题：${n} 项检查通过`);
 }
 
 console.log(bad === 0
