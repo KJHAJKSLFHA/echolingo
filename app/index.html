@@ -13,7 +13,7 @@
 <script>
 // 版本标记：app.js 会比对它，一旦发现 HTML 与 JS 来自不同版本就重新加载。
 // 这是「Service Worker 缓存了新版 JS 却给了旧 HTML」这类混搭的兜底保险。
-window.__ECHOLINGO_VER__ = '3.12.0';
+window.__ECHOLINGO_VER__ = '3.12.1';
 </script>
 <script>
 // 在首屏绘制前定好主题，避免出现"白闪一下再变黑"
@@ -27,6 +27,21 @@ window.__ECHOLINGO_VER__ = '3.12.0';
     document.documentElement.dataset.theme = 'light';
   }
 })();
+// 关掉 Netlify 自己注入的 "Powered by Netlify" 浮层。
+// 它是 Netlify 的 HUD：一个 position:fixed 的 iframe，钉死在右下角
+// （bottom:0; right:0; z-index:2147483645），会盖住页面右下角的内容；
+// 它自身没有任何拖动实现、位置写死，所以只能关掉，挪不走。
+//
+// 机制：HUD 脚本启动时读本站 localStorage 的 nl-hud:<variant>:v1，
+// 若为 "hidden" 就直接 return，连 iframe 都不创建；HUD 自带的「隐藏」
+// 按钮走 postMessage 写的也是同一个 key。我们改不了跨域的 iframe，
+// 但能写自己站的 localStorage，所以在 <head> 里同步写好标记，
+// 让徽章来不及渲染。用 try/catch 包住：隐私模式下 localStorage
+// 不可写，不能因此弄坏页面。
+try {
+  localStorage.setItem('nl-hud:public:v1', 'hidden');        // 公开访客看到的徽章
+  localStorage.setItem('nl-hud:owner-private:v1', 'hidden'); // 站点所有者自己访问时的工具条
+} catch (e) {}
 </script>
 </head>
 <body>

@@ -102,6 +102,50 @@ const unused = [...keySets[langs[0]]].filter((k) => !bound.has(k) && !k.startsWi
 const reallyUnused = unused.filter((k) => !bound.has(k));
 if (reallyUnused.length) console.log(`· 未被 markup 引用（可能由脚本使用）：${reallyUnused.length} 条`);
 
+// 6. Netlify HUD 隐藏标记必须在 <head> 的同步脚本里写好。
+// 为什么要有这条：线上会注入 `/.netlify/scripts/hud`（async），它启动时读
+// localStorage 的 nl-hud:<variant>:v1，不是 "hidden" 就挂一个 202×64、
+// z-index 21 亿的浮层，钉死右下角挡住内容 —— 它自身不支持拖动，只能关掉。
+// 这段标记一旦被误删或挪到异步脚本里，徽章就会回来，而且不报任何错。
+//
+// 注意：必须匹配 `setItem('nl-hud...')` 这个**调用**，不能只搜字符串
+// `nl-hud:public:v1` —— 上面注释里也写着这几个 key，只搜字符串的话
+// 把真正的调用删掉、注释还在，检查会误判为通过。
+const HUD_KEYS = ['nl-hud:public:v1', 'nl-hud:owner-private:v1'];
+for (const key of HUD_KEYS) {
+  const call = `setItem('${key}'`;
+  const pos = html.indexOf(call);
+  if (pos < 0) {
+    console.error(`✗ 缺少 Netlify HUD 隐藏标记 ${call}…)（徽章会挡住右下角内容）`);
+    bad++;
+    continue;
+  }
+  // 必须在 </head> 内，且在本页任何 async/defer 脚本之前 —— HUD 脚本是 async，
+  // 谁先跑不确定；写晚了徽章可能已经挂上。
+  const headEnd = html.indexOf('</head>');
+  if (headEnd >= 0 && pos > headEnd) {
+    console.error(`✗ HUD 标记 ${key} 在 </head> 之后，会晚于 HUD 脚本执行`);
+    bad++;
+  }
+  const later = [...html.matchAll(/<script[^>]*>/g)].filter((m) => m.index < pos && /async|defer/.test(m[0]));
+  if (later.length) {
+    console.error(`✗ HUD 标记 ${key} 之前有 async/defer 脚本，会和 HUD 抢执行顺序`);
+    bad++;
+  }
+}
+// try/catch 兜底：隐私模式下 localStorage.setItem 会抛异常，不能因此弄坏整页
+{
+  const i = html.indexOf("setItem('nl-hud:public:v1'");
+  if (i >= 0) {
+    const around = html.slice(Math.max(0, i - 300), i + 400);
+    if (!/try\s*\{/.test(around) || !/\}\s*catch/.test(around)) {
+      console.error('✗ HUD 标记没有用 try/catch 包住（隐私模式下会抛异常弄坏页面）');
+      bad++;
+    }
+  }
+}
+if (bad === 0) console.log(`✓ Netlify HUD 隐藏标记：${HUD_KEYS.length} 条 key，位置正确且已兜底`);
+
 console.log(bad === 0
   ? `✓ 三语字典一致：各 ${keySets[langs[0]].size} 条，markup 绑定 ${bound.size} 个 key 全部命中`
   : `✗ 共 ${bad} 个问题`);
