@@ -46,7 +46,7 @@ const ev = async (e) => {
 await cmd('Runtime.enable');
 await cmd('DOM.enable');
 await cmd('Page.enable');
-await cmd('Page.navigate', { url: `https://echolingo-app.netlify.app/app/` });
+await cmd('Page.navigate', { url: `https://echoling.netlify.app/app/` });
 const out = {};
 for (let i = 0; i < 100; i++) { if (await ev(`document.querySelectorAll('#setAsrModel option').length > 0`)) break; await sleep(300); }
 

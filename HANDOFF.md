@@ -21,7 +21,7 @@
 
 | 出口 | 位置 | 状态 |
 |---|---|---|
-| 网站 | https://echolingo-app.netlify.app | 官网 `/`，工具 `/app/` |
+| 网站 | https://echoling.netlify.app | 官网 `/`，工具 `/app/` |
 | macOS App | `/Applications/EchoLingo.app` | 790 MB，模型内置，双击即用 |
 | GitHub | github.com/KJHAJKSLFHA/echolingo | 公开，已同步 |
 | 本地源码 | 本目录 | `app/js/app.js` 的 `APP_VER` |
