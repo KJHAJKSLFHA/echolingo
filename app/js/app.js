@@ -18,7 +18,7 @@ import * as MT from './mt.js';
 
 // 与 index.html 里的 window.__ECHOLINGO_VER__ 必须保持一致。
 // 改这两个值时请一起改（sw.js 的 VERSION 也顺手升一级）。
-export const APP_VER = '3.11.0';
+export const APP_VER = '3.12.0';
 
 /* ============================ 状态 ============================ */
 
@@ -511,10 +511,18 @@ function applyModeView() {
 /** 拖拽区标题跟着学习语言走 —— 英文模式下说「拖英语视频」，
  *  西班牙模式下说「拖西班牙语视频」，别让用户拖错文件进来白等一轮识别。 */
 function applyDropzoneTitle() {
-  const el = $('[data-i18n="dz.title"]');
+  // 注意：选择器不能写死 [data-i18n="dz.title"]。这个函数自己会把 dataset.i18n
+  // 改成 dz.titleEs，改完那个选择器就再也选不中它了 —— 于是「es → en」切回来时
+  // 静默什么都不做，标题永远停在「把西班牙语视频拖进来」。两个 key 都要能选中。
+  const el = $('[data-i18n="dz.title"], [data-i18n="dz.titleEs"]');
   if (el) {
-    el.dataset.i18n = getMode() === 'es' ? 'dz.titleEs' : 'dz.title';
-    el.textContent = t(getMode() === 'es' ? 'dz.titleEs' : 'dz.title');
+    const key = getMode() === 'es' ? 'dz.titleEs' : 'dz.title';
+    // 行内 textContent 会盖住 data-i18n 的效果，而 setLang → applyI18n 又是按
+    // dataset.i18n 重刷一遍所有静态文案的。所以这里必须把 dataset.i18n 一起换掉，
+    // 否则界面语言一改，标题就被 applyI18n 刷回静态 key（dz.title）的译文，
+    // 西语模式下会看到「Drop an English video here」这种自相矛盾的句子。
+    el.dataset.i18n = key;
+    el.textContent = t(key);
   }
 }
 
