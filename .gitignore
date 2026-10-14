@@ -43,3 +43,10 @@ bench/*-test.wav
 
 # 三语首页截图（由 bench/shot-site.mjs 随时重生成，4MB，不入库）
 shots/site-i18n/
+
+# Windows 打包用的 .ico 图标（由 desktop/build/make-icon.mjs 从 SVG 生成，可随时重建）
+desktop/build/
+
+# electron-builder 生成的锁文件（本仓库用 npm ci 时才有意义，
+# 而本机没有系统 npm，锁文件只会造成「版本解析不一致」的困惑）
+package-lock.json

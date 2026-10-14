@@ -1,66 +1,134 @@
 {
   "name": "echolingo",
   "productName": "EchoLingo",
-  "version": "3.3.0",
+  "version": "3.11.0",
   "private": true,
   "description": "EchoLingo · 回声语言 — 英语/西语视频精读：自动生成原文与英中三语字幕、逐词释义与发音、逐词跟读高亮，识别与翻译全部在本机完成。",
-  "main": "electron/main.js",
+  "main": "desktop/main.js",
   "scripts": {
     "start": "node server.js",
     "dev": "python3 tools/serve.py 8765 --open",
     "electron": "electron .",
-    "dist": "electron-builder --mac",
-    "dist:dir": "electron-builder --mac --dir"
+    "dist": "electron-builder --mac --win",
+    "dist:dir": "electron-builder --mac --dir",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win"
   },
   "engines": {
     "node": ">=18"
   },
   "license": "MIT",
   "devDependencies": {
-    "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
   },
   "build": {
-    "appId": "com.echolingo.reader",
+    "appId": "com.echolingo.desktop",
     "productName": "EchoLingo",
     "asar": false,
     "directories": {
       "output": "release"
     },
     "files": [
-      "index.html",
-      "manifest.webmanifest",
-      "css/**/*",
-      "js/**/*",
-      "dict/**/*",
-      "media/**/*",
-      "models/**/*",
-      "vendor/**/*",
-      "server.js",
-      "electron/main.js",
-      "electron/icon.icns",
+      "desktop/main.js",
+      "desktop/site-server.js",
+      "desktop/icon.icns",
+      "app/index.html",
+      "app/manifest.webmanifest",
+      "app/sw.js",
+      "app/css/**/*",
+      "app/js/**/*",
+      "app/vendor/**/*",
+      "app/models/**/*",
+      "app/dict/**/*",
+      "app/media/**/*",
       "!bench/**/*",
       "!tools/**/*",
-      "!electron/smoke.js",
-      "!electron/icon.svg",
-      "!electron/icon.iconset/**/*",
-      "!release/**/*"
+      "!desktop/build/**/*",
+      "!desktop/.stage/**/*",
+      "!desktop/.electron-cache/**/*",
+      "!release/**/*",
+      "!dist/**/*"
     ],
     "mac": {
       "category": "public.app-category.education",
-      "icon": "electron/icon.icns",
+      "icon": "desktop/icon.icns",
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "dmg": {
       "title": "EchoLingo ${version}",
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
+    },
+    "extraResources": [
+      {
+        "from": "app",
+        "to": "site",
+        "filter": [
+          "**/*",
+          "!bench/**",
+          "!tools/**"
+        ]
+      }
+    ],
+    "copyright": "Copyright © 2026 EchoLingo",
+    "win": {
+      "icon": "desktop/build/icon.ico",
+      "requestedExecutionLevel": "asInvoker",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}-${name}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "EchoLingo",
+      "uninstallDisplayName": "EchoLingo ${version}",
+      "language": "2052"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-${arch}-portable.${ext}"
     }
   }
 }

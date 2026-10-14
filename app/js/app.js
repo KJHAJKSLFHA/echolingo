@@ -99,7 +99,7 @@ async function boot() {
   window.addEventListener('offline', updateNetStatus);
   startTick();
   setupLangUI();
-  onLangChange(() => { setupLangUI(); renderModelOptions(); renderStatus(); rerenderAll(); applyLangView(); });
+  onLangChange(() => { setupLangUI(); renderModelOptions(); renderStatus(); rerenderAll(); applyLangView(); applyDropzoneTitle(); });
 
   // 空闲时把模型读进内存，这样「导入视频即出字幕」不用再等模型冷启动
   if (S.settings.autoRun) setTimeout(preloadModels, 1200);
@@ -502,9 +502,20 @@ function applyModeView() {
   // 字幕面板那三个语言按钮跟着走：西语模式要多一个「英文翻译」的开关，
   // 原文按钮的标签也从「英文」变成「西语」。
   applyLangView();
+  applyDropzoneTitle();
   // 收藏夹按模式分区：切完模式，角标和抽屉内容都要当场换成另一档
   refreshFavCounts();
   if (!$('#favDrawer').hidden) renderFavs();
+}
+
+/** 拖拽区标题跟着学习语言走 —— 英文模式下说「拖英语视频」，
+ *  西班牙模式下说「拖西班牙语视频」，别让用户拖错文件进来白等一轮识别。 */
+function applyDropzoneTitle() {
+  const el = $('[data-i18n="dz.title"]');
+  if (el) {
+    el.dataset.i18n = getMode() === 'es' ? 'dz.titleEs' : 'dz.title';
+    el.textContent = t(getMode() === 'es' ? 'dz.titleEs' : 'dz.title');
+  }
 }
 
 /* ── 收藏分区 ──

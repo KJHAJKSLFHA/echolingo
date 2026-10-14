@@ -41,7 +41,8 @@ const ZH = {
   'top.lang': '切换界面语言',
 
   // 拖放区
-  'dz.title': '把英语或西班牙语视频拖进来',
+  'dz.title': '把英语视频拖进来',
+  'dz.titleEs': '把西班牙语视频拖进来',
   'dz.desc': '拖进来就会<b>自动开始识别</b>，说过的每一句话会逐句出现在右边。<br>视频与音频全程留在本机，不会上传到任何服务器。<br>支持 mp4 / mov / mkv / webm / mp3 / m4a / wav。',
   'dz.choose': '选择文件',
   'dz.demoAudio': '载入示例音频',
@@ -377,7 +378,8 @@ const EN = {
   'top.theme': 'Switch light / dark',
   'top.lang': 'Switch interface language',
 
-  'dz.title': 'Drop an English or Spanish video here',
+  'dz.title': 'Drop an English video here',
+  'dz.titleEs': 'Drop a Spanish video here',
   'dz.desc': 'Dropping a file <b>starts transcription automatically</b>, and each spoken sentence appears on the right.<br>Your video and audio never leave this device.<br>Supports mp4 / mov / mkv / webm / mp3 / m4a / wav.',
   'dz.choose': 'Choose a file',
   'dz.demoAudio': 'Load sample audio',
@@ -705,7 +707,8 @@ const ES = {
   'top.lang': 'Cambiar el idioma de la interfaz',
 
   // 拖放区
-  'dz.title': 'Arrastra aquí tu vídeo en inglés o español',
+  'dz.title': 'Arrastra aquí tu vídeo en inglés',
+  'dz.titleEs': 'Arrastra aquí tu vídeo en español',
   'dz.desc': 'Al soltarlo <b>empieza a transcribir solo</b>, y cada frase aparece a la derecha.<br>El vídeo y el audio se quedan en tu ordenador; no se suben a ningún servidor.<br>Compatible con mp4 / mov / mkv / webm / mp3 / m4a / wav.',
   'dz.choose': 'Elegir archivo',
   'dz.demoAudio': 'Cargar audio de ejemplo',
