@@ -20,7 +20,7 @@
 //   3. 只有真正不可变的大文件（模型 onnx / wasm / 音视频 / 词典分片）走 cache-first。
 // ==========================================================================
 
-const VERSION = 'echolingo-v16';
+const VERSION = 'echolingo-v17';
 
 // 需要离线可用的外壳。列表只影响「首次装完即可离线」的体验，
 // 真正兜底的是运行时缓存：任何被请求过的资源都会自动进缓存。
@@ -30,6 +30,7 @@ const SHELL = [
   './css/styles.css',
   './manifest.webmanifest',
   './js/app.js',
+  './js/srs.js',
   './js/i18n.js',
   './js/models.js',
   './js/segment.js',

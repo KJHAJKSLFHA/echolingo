@@ -53,3 +53,6 @@ package-lock.json
 
 # 我本地做视觉/数值验证时产生的截图，不是页面素材，不进仓库也不上线
 .verify-shots/
+
+# 回归测试生成的截图（本地看，不进仓库）
+bench/shots/

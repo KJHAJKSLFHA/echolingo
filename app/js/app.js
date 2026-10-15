@@ -15,10 +15,11 @@ import * as SUB from './subtitle.js';
 import * as SUBMASK from './subtitle-mask.js';
 import * as ASR from './asr.js';
 import * as MT from './mt.js';
+import * as SRS from './srs.js';
 
 // 与 index.html 里的 window.__ECHOLINGO_VER__ 必须保持一致。
 // 改这两个值时请一起改（sw.js 的 VERSION 也顺手升一级）。
-export const APP_VER = '3.12.1';
+export const APP_VER = '3.13.0';
 
 /* ============================ 状态 ============================ */
 
@@ -61,6 +62,9 @@ const S = {
   wordCardFor: null,
   rafId: 0,
   lastUserScroll: 0,
+  // 复习会话。queue 在开始时一次定好，中途答对答错都不会往里加东西 ——
+  // 边复习边追加会让「还剩几条」变成一直在变的数字，看不到头。
+  review: null,        // { queue, idx, ok, bad, revealed, tab, lang }
 };
 
 const LS_KEY = 'echolingo.settings.v1';
@@ -623,8 +627,11 @@ async function openStores() {
     ]);
     const words = await idbAll(S.db, 'words');
     const sents = await idbAll(S.db, 'sentences');
-    S.favWords = new Map(words.map((w) => [w.id, w]));
-    S.favSentences = new Map(sents.map((s) => [s.id, s]));
+    // 老库里的收藏没有 SRS 字段（复习功能上线前存的）。这里补上，并按
+    // 「立刻可复习」处理 —— 否则升级后复习页空着，看着像坏了。
+    // 只在内存里补，不立刻回写：回写要几百次事务，而下次复习打分会顺手存回去。
+    S.favWords = new Map(words.map((w) => [w.id, SRS.ensureSrs(w)]));
+    S.favSentences = new Map(sents.map((s) => [s.id, SRS.ensureSrs(s)]));
   } catch (e) {
     toast(t('fav.dbUnavailable', { msg: e.message }));
   }
@@ -637,6 +644,9 @@ async function refreshFavCounts() {
   const n = Array.from(S.favWords.values()).filter((w) => recLang(w) === mine).length
     + Array.from(S.favSentences.values()).filter((s) => recLang(s) === mine).length;
   setText('favCount', String(n));
+  // 复习角标跟着一起刷：两处都依赖「当前档位有哪些收藏」，
+  // 分开调用迟早会漏掉一处，变成「删了收藏复习角标还挂着」。
+  refreshReviewBadge();
   renderFavScope();
 }
 
@@ -802,6 +812,41 @@ function bindUI() {
   $('#btnSettings').addEventListener('click', () => toggleDrawer('setDrawer'));
   $('#setClose').addEventListener('click', () => closeDrawers());
   $('#scrim').addEventListener('click', closeDrawers);
+
+  // --- 复习 ---
+  $('#btnReview').addEventListener('click', openReview);
+  $('#rvClose').addEventListener('click', closeReview);
+  $('#rvSpeak').addEventListener('click', speakReview);
+  $('#rvSpeakSlow').addEventListener('click', () => {
+    const cur = reviewCur();
+    if (!cur) return;
+    // 慢速：只改这一次的速率，不动设置里用户选好的朗读速度。
+    speakIn(cur.kind === 'word' ? cur.rec.word : cur.rec.en, recLang(cur.rec), { rate: 0.6 });
+  });
+  // 「看答案」在两种状态下是两种动作：卡片上 = 显形，结束页 = 关闭。
+  // 只用一个监听器按状态分派 —— 混用 addEventListener 和 onclick 会让
+  // 结束页那一下同时触发「关闭」和「显形」，浮层刚关又被重新渲染出来。
+  $('#rvShow').addEventListener('click', () => {
+    if (S.review && S.review.idx >= S.review.queue.length) closeReview();
+    else revealReview();
+  });
+  $('#rvYes').addEventListener('click', () => gradeReview(true));
+  $('#rvNo').addEventListener('click', () => gradeReview(false));
+  // 复习时键盘优先：空格再听一遍、回车看答案、←/→ 评分。
+  // 手不用离开键盘，才能一直盯着屏幕（或者闭着眼听）。
+  document.addEventListener('keydown', (e) => {
+    if ($('#reviewOverlay').hidden || !S.review) return;
+    // e.target 不一定是元素（dispatch 到 document 时就是 document，没有 matches）。
+    // 直接调 .matches() 会抛 TypeError，整个键盘响应就废了。
+    const tag = e.target?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
+    const done = S.review.idx >= S.review.queue.length;
+    if (e.code === 'Space') { e.preventDefault(); if (!done) speakReview(); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (done) { closeReview(); } else if (!S.review.revealed) revealReview(); }
+    else if (e.key === 'ArrowRight' && S.review.revealed) { e.preventDefault(); gradeReview(true); }
+    else if (e.key === 'ArrowLeft' && S.review.revealed) { e.preventDefault(); gradeReview(false); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeReview(); }
+  });
   $('#favSeg').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
@@ -865,7 +910,9 @@ function bindUI() {
   document.addEventListener('click', (e) => {
     const wc = $('#wordcard');
     if (wc.hidden) return;
-    if (wc.contains(e.target) || e.target.closest('.w')) return;
+    // 收藏抽屉里点出来的词卡，锚点在抽屉里 —— 抽屉跟词卡是兄弟节点，不在
+    // wc.contains() 范围里。少了这一条，点收藏里的词卡会「刚弹出来就被关掉」。
+    if (wc.contains(e.target) || e.target.closest('.w') || e.target.closest('#favDrawer')) return;
     closeWordCard();
   });
   window.addEventListener('resize', debounce(() => { if (!$('#wordcard').hidden) closeWordCard(); }, 120));
@@ -1821,7 +1868,13 @@ function speakIn(text, lang, extra = {}) {
 
 /* ============================ 单词卡片 ============================ */
 
-async function openWordCard(word, anchor, cueIdx) {
+/** 打开单词卡。
+ *  cueIdx 可以省 —— 收藏抽屉里点词时，那条记录可能来自另一个视频、甚至当前
+ *  根本没导入视频，压根没有「第几句」这个概念。省掉时例句改用收藏时存下的
+ *  sample，卡片其余部分完全一样。
+ *  langOverride：收藏里的词可能跟当前模式不同语言（英语模式下也能翻西语收藏），
+ *  这时必须按记录自己的语言查，不能跟着当前模式走。 */
+async function openWordCard(word, anchor, cueIdx, opts = {}) {
   const card = $('#wordcard');
   S.wordCardFor = null;
   card.hidden = false;
@@ -1831,7 +1884,7 @@ async function openWordCard(word, anchor, cueIdx) {
   $('#wcFoot').textContent = '';
   positionCard(card, anchor);
 
-  const lang = subLang();
+  const lang = opts.lang || subLang();
   const es = lang === 'es';
 
   // ── 西语模式：先把这个词翻成英文，再拿英文去查那本 ECDICT ──
@@ -1852,8 +1905,9 @@ async function openWordCard(word, anchor, cueIdx) {
   }
 
   const entry = await DICT.lookup(entryWord);
-  const cue = S.cues[cueIdx];
-  const inSentence = cue?.text || '';
+  const cue = cueIdx >= 0 ? S.cues[cueIdx] : null;
+  // 没有 cue（收藏抽屉进来）就退回收藏时留下的例句，别让「例句」那一栏空掉
+  const inSentence = cue?.text || opts.sample || '';
   S.wordCardFor = {
     // 卡片和收藏都留用户点下去的那个词。西语模式尤其重要：查到的 entry 是
     // 那本**英语**词典里的对译词（práctica → practice），拿 entry.word 当主键
@@ -1869,9 +1923,9 @@ async function openWordCard(word, anchor, cueIdx) {
     exch: entry?.exch || '',
     inflected: !!entry?.inflected,
     sample: inSentence,
-    sampleZh: cue?.zh || '',
-    video: S.name,
-    at: cue?.start ?? null,
+    sampleZh: cue?.zh || opts.sampleZh || '',
+    video: S.name || opts.video || '',
+    at: cue?.start ?? opts.at ?? null,
   };
 
   if (!entry) {
@@ -1956,6 +2010,228 @@ function syncFavButton() {
   btn.title = on ? t('wc.unfav') : t('wc.fav');
 }
 
+/* ============================ 复习 ============================
+   练的是听力：先只给声音，听懂没听懂由用户自评，排期交给 SRS。
+   刻意不做「看单词选意思」—— 那会把工具前面所有逼你听的功夫抵消掉。
+============================================================= */
+
+/** 当前模式这一档里，到期的条目（生词 + 句子）。 */
+function reviewPool(lang = favLang()) {
+  const out = [];
+  for (const w of S.favWords.values()) {
+    if (recLang(w) === lang) out.push({ kind: 'word', rec: w });
+  }
+  for (const s of S.favSentences.values()) {
+    if (recLang(s) === lang) out.push({ kind: 'sent', rec: s });
+  }
+  return out;
+}
+
+/** 到期的排前面，其余按到期时间；同一时刻到期的把句子放前面（句子是主角）。 */
+function reviewQueue(lang = favLang(), now = Date.now()) {
+  const pool = reviewPool(lang);
+  return pool
+    .filter((it) => SRS.isDue(it.rec, now))
+    .sort((a, b) => {
+      const d = SRS.ensureSrs(a.rec, now).dueAt - SRS.ensureSrs(b.rec, now).dueAt;
+      if (d !== 0) return d;
+      return (a.kind === 'sent' ? 0 : 1) - (b.kind === 'sent' ? 0 : 1);
+    });
+}
+
+/** 刷新顶栏角标。0 条时把角标藏起来 —— 一屏的「0」比没有更烦人。 */
+function refreshReviewBadge() {
+  const btn = $('#btnReview');
+  const badge = $('#reviewCount');
+  if (!btn || !badge) return;
+  const n = reviewQueue().length;
+  badge.textContent = String(n);
+  badge.hidden = n === 0;
+  btn.classList.toggle('has-due', n > 0);
+}
+
+function openReview() {
+  const q = reviewQueue();
+  if (!q.length) {
+    toast(t('rv.none'));
+    return;
+  }
+  S.review = { queue: q, idx: 0, ok: 0, bad: 0, revealed: false, lang: favLang() };
+  $('#reviewOverlay').hidden = false;
+  renderReview();
+}
+
+function closeReview() {
+  S.review = null;
+  $('#reviewOverlay').hidden = true;
+  // 结束页会把按钮文案改成「完成」，下次进来要变回「看答案」。
+  $('#rvShow').textContent = t('rv.show');
+  $('#rvShow').hidden = false;
+  TTS.stopSpeak();
+  refreshReviewBadge();
+}
+
+/** 当前这张卡。 */
+const reviewCur = () => {
+  const r = S.review;
+  if (!r || r.idx >= r.queue.length) return null;
+  return r.queue[r.idx];
+};
+
+function renderReview() {
+  const r = S.review;
+  if (!r) return;
+  const box = $('#rvBody');
+  const ans = $('#rvAnswer');
+  const foot = $('#rvFoot');
+  const cur = reviewCur();
+
+  if (!cur) { renderReviewDone(); return; }
+
+  $('#rvProgress').textContent = t('rv.progress', { i: r.idx + 1, n: r.queue.length });
+  // 只有展开过答案才出现「听懂了/没听懂」。先给答案再让人自评就失去意义了。
+  $('#rvShow').hidden = r.revealed;
+  $('#rvGrade').hidden = !r.revealed;
+  ans.hidden = true;
+  box.innerHTML = '';
+  foot.textContent = '';
+
+  const listen = el('button', { class: 'rv-listen', id: 'rvListen', type: 'button', title: t('rv.replay') }, [
+    el('div', { html: '<svg viewBox="0 0 24 24"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M16 9a4 4 0 010 6"/><path d="M19.5 6.5a8 8 0 010 11"/></svg>' }),
+    el('span', { class: 'rv-listen-label', text: t('rv.tapToListen') }),
+  ]);
+  box.appendChild(listen);
+
+  if (cur.kind === 'word') {
+    const w = cur.rec;
+    // 单词：正面就是词，不模糊（不认识就是不认识，藏起来没意义）。
+    // 藏的是释义。
+    box.appendChild(el('div', { class: 'rv-word', text: w.word }));
+    if (w.phonetic) box.appendChild(el('div', { class: 'rv-phon', text: w.phonetic }));
+    ans.hidden = false;
+    ans.innerHTML = '';
+    ans.appendChild(el('div', { class: 'rv-def' + (r.revealed ? '' : ' blur'), text: w.trans || t('fav.noDef') }));
+    if (w.engdef) ans.appendChild(el('div', { class: 'rv-engdef', text: w.engdef }));
+    if (w.sample) ans.appendChild(el('div', { class: 'rv-meta', text: t('rv.from') + w.sample }));
+  } else {
+    const s = cur.rec;
+    // 句子：原文和译文都模糊。这是「先听懂再说」的关键一步。
+    box.appendChild(el('div', { class: 'rv-hint', text: t('rv.hintSent') }));
+    ans.hidden = false;
+    ans.innerHTML = '';
+    ans.appendChild(el('div', { class: 'rv-src' + (r.revealed ? '' : ' blur'), text: s.en }));
+    if (s.mid) ans.appendChild(el('div', { class: 'rv-mid' + (r.revealed ? '' : ' blur'), text: s.mid }));
+    if (s.zh) ans.appendChild(el('div', { class: 'rv-zh' + (r.revealed ? '' : ' blur'), text: s.zh }));
+    const meta = [s.video || t('fav.unknownVideo'), fmtTime(s.start || 0)].join(' · ');
+    ans.appendChild(el('div', { class: 'rv-meta', text: meta }));
+  }
+
+  if (r.revealed) foot.textContent = t('rv.nextDue', { a: dueLabel(cur.rec, true), b: dueLabel(cur.rec, false) });
+  box.querySelector('#rvListen').addEventListener('click', () => speakReview());
+  // 进来就自动念一遍 —— 少点一次，且马上把注意力拉到耳朵上。
+  speakReview();
+}
+
+/** 「答这个会推到多久以后」的预览，给用户一个「答对值不值」的即时反馈。
+ *  这只是算一下、给个说法，不写库也不改记录（SRS.grade 是纯函数）。 */
+function dueLabel(rec, ok) {
+  const next = SRS.grade(rec, ok);
+  return humanUntil(next.dueAt);
+}
+
+function speakReview() {
+  const cur = reviewCur();
+  if (!cur) return;
+  const btn = $('#rvListen');
+  const text = cur.kind === 'word' ? cur.rec.word : cur.rec.en;
+  const lang = recLang(cur.rec);
+  btn?.classList.add('playing');
+  speakIn(text, lang, {
+    rate: S.settings.ttsRate,
+    onEnd: () => btn?.classList.remove('playing'),
+  });
+}
+
+function revealReview() {
+  const r = S.review;
+  if (!r) return;
+  r.revealed = true;
+  renderReview();
+}
+
+/** 打分并进下一张。 */
+async function gradeReview(ok) {
+  const r = S.review;
+  const cur = reviewCur();
+  if (!r || !cur) return;
+
+  const store = cur.kind === 'word' ? 'words' : 'sentences';
+  const updated = SRS.grade(cur.rec, ok);
+  if (cur.kind === 'word') S.favWords.set(updated.id, updated);
+  else S.favSentences.set(updated.id, updated);
+  // 排期落库失败不能中断复习 —— 内存里已经更新了，最坏情况是这次进度没存住。
+  idbPut(S.db, store, updated).catch(() => {});
+
+  if (ok) r.ok++; else r.bad++;
+
+  r.idx++;
+  r.revealed = false;
+  if (r.idx >= r.queue.length) {
+    renderReviewDone();
+    refreshReviewBadge();
+    if (!$('#favDrawer').hidden) renderFavs();
+    return;
+  }
+  renderReview();
+  refreshReviewBadge();
+}
+
+function renderReviewDone() {
+  const r = S.review;
+  $('#rvProgress').textContent = t('rv.doneTitle');
+  $('#rvShow').hidden = true;
+  $('#rvGrade').hidden = true;
+  $('#rvAnswer').hidden = true;
+  $('#rvFoot').textContent = '';
+
+  const box = $('#rvBody');
+  const total = r ? r.ok + r.bad : 0;
+  // 下一轮什么时候来 —— 复习完最想知道的就是这个。
+  const pool = reviewPool(r?.lang);
+  const nextAt = SRS.nextDueAt(pool.map((it) => it.rec));
+  const nextTxt = nextAt ? t('rv.nextRound', { when: humanUntil(nextAt) }) : t('rv.allClear');
+
+  box.innerHTML = '';
+  box.appendChild(el('div', { class: 'rv-done' }, [
+    el('h3', { text: t('rv.doneTitle') }),
+    el('div', { class: 'rv-stats' }, [
+      el('div', { class: 'rv-stat ok' }, [
+        el('b', { text: String(r ? r.ok : 0) }), el('span', { text: t('rv.understood') }),
+      ]),
+      el('div', { class: 'rv-stat bad' }, [
+        el('b', { text: String(r ? r.bad : 0) }), el('span', { text: t('rv.notYet') }),
+      ]),
+    ]),
+    el('p', { text: total ? t('rv.doneBody', { n: total }) : t('rv.none') }),
+    el('p', { class: 'rv-meta', text: nextTxt }),
+  ]));
+  // 结束页的按钮换成「完成」。动作分派在 bindUI 那个统一监听器里（按状态判断），
+  // 这里只负责改文案。标签在 closeReview 里恢复成「看答案」。
+  $('#rvShow').hidden = false;
+  $('#rvShow').textContent = t('rv.finish');
+}
+
+/** 「还有多久」的人话说法。 */
+function humanUntil(when, now = Date.now()) {
+  const d = when - now;
+  if (d <= 0) return t('rv.now');
+  const mins = d / 6e4;
+  if (mins < 60) return t('rv.min', { n: Math.round(mins) });
+  const days = d / 864e5;
+  if (days < 1) return t('rv.hours', { n: Math.round(d / 36e5) });
+  return t('rv.day', { n: Math.round(days) });
+}
+
 /* ============================ 收藏 ============================ */
 
 async function toggleFavWord(w) {
@@ -1967,12 +2243,16 @@ async function toggleFavWord(w) {
     toast(t('wc.unfavDone', { word: w.word }));
   } else {
     const rec = { ...w, id, lang, addedAt: Date.now(), count: 1 };
+    // 新收藏立刻进复习队列（dueAt = 现在，box 0 = 20 分钟后）。
+    // 不这么做的话，用户收藏完去看复习页会是空的，以为功能没生效。
+    Object.assign(rec, SRS.ensureSrs({}, rec.addedAt));
     S.favWords.set(id, rec);
     await idbPut(S.db, 'words', rec).catch(() => {});
     toast(t('wc.favDone', { word: w.word }));
   }
   syncFavButton();
   await refreshFavCounts();
+  refreshReviewBadge();
   const q = $('#subSearch').value.trim();
   const keep = S.activeIdx;
   renderSubs(q);
@@ -2002,11 +2282,13 @@ async function toggleFavSentence(cue) {
       lang: favLang(),
       start: cue.start, end: cue.end, addedAt: Date.now(),
     };
+    Object.assign(rec, SRS.ensureSrs({}, rec.addedAt));
     S.favSentences.set(id, rec);
     await idbPut(S.db, 'sentences', rec).catch(() => {});
     toast(t('fav.savedSent'));
   }
   await refreshFavCounts();
+  refreshReviewBadge();
   if (!$('#favDrawer').hidden) renderFavs();
 }
 
@@ -2041,7 +2323,8 @@ function renderFavs() {
       return;
     }
     for (const w of list) {
-      box.appendChild(el('div', { class: 'fav-item' }, [
+      // data-wid 让条目正文可点（点了弹词卡）。没有它，收藏夹只能看不能查。
+      box.appendChild(el('div', { class: 'fav-item clickable', 'data-wid': w.id }, [
         el('div', { class: 'tools', html:
           `<button class="icon-btn" data-act="speak" data-id="${escapeHtml(w.id)}" title="${escapeHtml(t('wc.speak'))}">🔊</button>` +
           `<button class="icon-btn" data-act="del-word" data-id="${escapeHtml(w.id)}" title="${escapeHtml(t('common.close'))}">✕</button>` }),
@@ -2080,7 +2363,29 @@ function renderFavs() {
 
 async function onFavBodyClick(e) {
   const btn = e.target.closest('button[data-act]');
-  if (!btn) return;
+  if (!btn) {
+    // 没点到按钮：可能是点了收藏条目的正文。
+    // 生词条目点一下要能重新翻出释义 —— 收藏之后想再看一眼意思是很自然的动作，
+    // 以前这里直接 return，等于收藏夹只能看不能查。
+    const item = e.target.closest('.fav-item');
+    const wid = item?.dataset.wid;
+    if (wid) {
+      const w = S.favWords.get(wid);
+      if (w) {
+        const anchor = item.querySelector('.t') || item;
+        // 按这条收藏自己的语言查，不跟当前模式走：
+        // 英语模式下翻到一条西语收藏，也得按西语去查才有释义。
+        openWordCard(w.word, anchor, -1, {
+          lang: recLang(w),
+          sample: w.sample || '',
+          sampleZh: w.sampleZh || '',
+          video: w.video || '',
+          at: w.at ?? null,
+        });
+      }
+    }
+    return;
+  }
   const { act, id } = btn.dataset;
   if (act === 'speak') {
     const w = S.favWords.get(id);

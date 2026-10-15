@@ -440,6 +440,10 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; }
 .fav-item .meta { font-size: 11px; color: var(--text-3); margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; }
 .fav-item .tools { position: absolute; right: 7px; top: 7px; display: flex; gap: 3px; opacity: 0; transition: opacity .12s; }
 .fav-item:hover .tools { opacity: 1; }
+/* 生词条目正文可点（弹词卡）。给个手型和悬停反馈，否则没人知道它能点。 */
+.fav-item.clickable { cursor: pointer; }
+.fav-item.clickable .t { transition: color .12s; }
+.fav-item.clickable:hover .t { color: var(--brand); }
 
 /* 设置 */
 .set-sec { padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--line); }
@@ -714,3 +718,96 @@ body.dragover::after {
 .modal-card h3 { font-size: 15.5px; margin-bottom: 8px; }
 .modal-card p { font-size: 13.5px; line-height: 1.65; color: var(--text-2); }
 .modal-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+/* ============================ 复习 ============================
+   设计取向：**屏幕上越干净越好**。
+   复习练的是听力，所以默认只给一个播放键，原文和译文都先藏着。
+   藏的时候用 blur 而不是 display:none —— 内容还在那儿占着位置，
+   卡片不会因为展开答案而跳动，眼睛也不会被「新出现的一块」吸引过去。
+================================================================ */
+
+.pill-due { background: var(--bad); color: #fff; }
+
+.review {
+  position: fixed; inset: 0; z-index: 85;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px; background: rgba(12, 14, 18, .62);
+  animation: fade .16s ease;
+}
+.rv-card {
+  width: min(620px, 100%); max-height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line-strong);
+  border-radius: 14px; box-shadow: 0 24px 70px rgba(0, 0, 0, .4);
+  overflow: hidden;
+}
+.rv-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--line);
+}
+.rv-progress { font-size: 12.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.rv-head-btns { display: flex; align-items: center; gap: 6px; }
+
+.rv-body { padding: 30px 22px 22px; text-align: center; }
+
+/* 「先听」的大按钮。整个卡片的视觉重心就落在这上面。 */
+.rv-listen {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; width: 132px; height: 132px; margin: 0 auto 18px;
+  border-radius: 50%; cursor: pointer;
+  background: var(--brand-soft); color: var(--brand);
+  border: 2px solid var(--brand-line);
+  transition: transform .12s, background .12s, border-color .12s;
+}
+.rv-listen:hover { background: var(--hover-bg); border-color: var(--brand); }
+.rv-listen:active { transform: scale(.96); }
+.rv-listen.playing { border-color: var(--brand); }
+.rv-listen svg { width: 46px; height: 46px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.rv-listen .rv-listen-label { font-size: 12px; color: var(--text-2); }
+
+.rv-hint { font-size: 13px; color: var(--text-3); line-height: 1.7; }
+
+/* 句子/单词的原文：先模糊。想看清楚得点「看答案」。 */
+.rv-src {
+  font-family: Georgia, serif; font-size: 19px; line-height: 1.72; color: var(--text);
+  margin-top: 4px; transition: filter .18s;
+}
+.rv-src.blur { filter: blur(7px); user-select: none; }
+.rv-mid { font-family: Georgia, serif; font-size: 15px; color: var(--text-2); margin-top: 8px; }
+.rv-zh { font-size: 13.5px; color: var(--text-2); margin-top: 9px; line-height: 1.7; }
+/* 译文也要模糊 —— 只看英文模糊等于没藏：中文一读就知道意思，耳朵就不用动了。
+   这两条以前漏了，.blur 类挂上去但没样式，译文一直是清清楚楚的。 */
+.rv-mid.blur, .rv-zh.blur { filter: blur(6px); user-select: none; }
+.rv-meta { font-size: 11.5px; color: var(--text-3); margin-top: 14px; }
+.rv-mid, .rv-zh { transition: filter .18s; }
+
+/* 单词复习：正面是词本身，所以不模糊，只藏释义 */
+.rv-word { font-size: 30px; font-weight: 600; letter-spacing: .2px; }
+.rv-phon { font-family: var(--mono); font-size: 13px; color: var(--text-3); margin-top: 5px; }
+.rv-def { font-size: 15px; color: var(--text); margin-top: 12px; line-height: 1.7; }
+.rv-def.blur { filter: blur(7px); user-select: none; }
+.rv-engdef { font-size: 12.5px; color: var(--text-3); margin-top: 10px; line-height: 1.65; }
+
+.rv-foot { padding: 0 22px 6px; font-size: 11.5px; color: var(--text-3); text-align: center; }
+
+.rv-actions {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 16px 20px 20px; border-top: 1px solid var(--line);
+}
+.rv-grade { display: flex; gap: 10px; }
+.btn-lg { padding: 10px 22px; font-size: 14px; }
+.btn-ok { border-color: var(--ok); color: var(--ok); background: var(--ok-soft); }
+.btn-ok:hover { background: var(--ok); color: #fff; border-color: var(--ok); }
+.btn-bad { border-color: var(--bad); color: var(--bad); }
+.btn-bad:hover { background: var(--bad); color: #fff; border-color: var(--bad); }
+
+/* 复习结束的总结页 */
+.rv-done { padding: 40px 24px; text-align: center; }
+.rv-done h3 { font-size: 17px; margin-bottom: 10px; }
+.rv-done p { font-size: 13.5px; color: var(--text-2); line-height: 1.75; }
+.rv-stats { display: flex; justify-content: center; gap: 26px; margin: 22px 0 6px; }
+.rv-stat { text-align: center; }
+.rv-stat b { display: block; font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rv-stat span { font-size: 11.5px; color: var(--text-3); }
+.rv-stat.ok b { color: var(--ok); }
+.rv-stat.bad b { color: var(--bad); }
