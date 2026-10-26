@@ -32,7 +32,17 @@
 //    拽进主线程首屏。线程数由这里算好后通过消息交给 Worker，
 //    与 Worker 内 defaultThreads() 的取值保持同一套规则即可。
 
-const TASK_TIMEOUT_MS = 180000;   // 单段超过 3 分钟没回包 → 这个会话算卡死
+// 单段没回包多久算卡死。原来固定 180s 太钝：一段最多 29 秒音频，正常
+// 十几秒就出结果，原来却要空等三分钟才判 stale —— 一卡就是三段的时间，
+// 17 分钟视频四十段，光等超时就把整条音轨拖垮，用户只看到开头几句。
+// 现在按段长算，最少 45 秒、最多 120 秒，给慢设备留足余量又不至于拖死。
+const TASK_TIMEOUT_MIN_MS = 45000;
+const TASK_TIMEOUT_MAX_MS = 120000;
+function taskTimeoutMs(task) {
+  const sec = Math.max(1, (task.end - task.start) / 16000);
+  // Whisper 在低端设备约 1.5–3 倍实时；按 3 倍实时 + 30 秒装载余量估。
+  return Math.min(TASK_TIMEOUT_MAX_MS, Math.max(TASK_TIMEOUT_MIN_MS, sec * 3000 + 30000));
+}
 
 const MODELS_BASE = new URL('../models/', import.meta.url).pathname;
 
@@ -107,11 +117,36 @@ async function prefetchBig(modelId, onProgress, isDisposed) {
 }
 
 
+/** iPad / iPhone 判定：Safari 没有 navigator.deviceMemory，拿不到内存只能按设备类型兜底 */
+function isAppleTabletOrPhone() {
+  const ua = navigator.userAgent || '';
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  // iPadOS 13+ 默认发桌面 UA（Macintosh），靠触摸点数把自己认出来
+  return /Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1;
+}
+
+/** Safari 判定：Chromium 系都发 Chrome/Edg，Firefox 自己有 deviceMemory，剩下没 deviceMemory 的基本就是 Safari */
+function isWebKitNoMemInfo() {
+  const ua = navigator.userAgent || '';
+  return !/Chrome|Chromium|Edg|OPR/.test(ua) && /Safari/.test(ua);
+}
+
 /** 设备画像：决定开几个会话、每个会话几线程 */
 export function pickPoolShape(segCount) {
   const hc = navigator.hardwareConcurrency || 4;
-  const mem = navigator.deviceMemory || 0;          // GB；Safari/Firefox 没有这个字段
+  let mem = navigator.deviceMemory || 0;            // GB；Safari/Firefox 没有这个字段
   const isolated = !!self.crossOriginIsolated;      // 没有它就没有 SharedArrayBuffer
+
+  // 拿不到内存信息的浏览器一律按 4GB 保守估算。
+  //
+  // 原来这里只在 iPad/iPhone 上兜底，Mac 上的 Safari 照样 mem=0 —— 而 mem=0 会
+  // 跳过下面全部内存限制，按核心数硬开 4 个会话 × 2 线程。四份 whisper-base
+  // 的 wasm 堆叠在一起，跑到长音频后半段就容易 OOM 把线程打崩；线程一崩那段
+  // 就失败，失败两次整条音轨作废。用户看到的就是「17 分钟的视频只识别出前几分钟」。
+  // Safari 的 UA 又长得很像 Chrome 以外的所有东西，所以按「有没有 deviceMemory」
+  // 来判断反而最准：有就信它，没有就别赌。
+  if (!mem && (isAppleTabletOrPhone() || isWebKitNoMemInfo())) mem = 3;
+  if (!mem) mem = 4;   // 兜底：任何拿不到内存信息的浏览器都别按无限内存开
 
   // 每个会话一份权重，内存太小的设备不能开多
   let byMem = 4;
@@ -231,15 +266,28 @@ export function createASRPool({ modelId, size, threads, prefetch = false }) {
   /** 把一段音频交给一个会话 */
   function runSeg(slot, task, wordTimestamps) {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { off(); reject(Object.assign(new Error('单段识别超时'), { stale: true })); }, TASK_TIMEOUT_MS);
+      const timer = setTimeout(() => { off(); reject(Object.assign(new Error('单段识别超时'), { stale: true })); }, taskTimeoutMs(task));
       const onMsg = (ev) => {
         const m = ev.data || {};
         if (m.task !== task.i) return;
         if (m.type === 'seg-done') { off(); resolve(m); }
         else if (m.type === 'error') { off(); reject(new Error(m.message || '识别失败')); }
       };
-      const off = () => { clearTimeout(timer); slot.w.removeEventListener('message', onMsg); slot.busy = false; };
+      // 线程自己崩了（Safari 里内存吃紧时 wasm 会直接把 worker 干掉）：
+      // 不接这个事件，这个 Promise 就永远不 settle，要白等满整段超时
+      //（最长两分钟）才轮到兜底 —— 期间界面一动不动，看着就像「卡住了」。
+      const onErr = (ev) => {
+        off();
+        reject(Object.assign(new Error(`识别线程崩溃：${ev?.message || 'worker error'}`), { stale: true }));
+      };
+      const off = () => {
+        clearTimeout(timer);
+        slot.w.removeEventListener('message', onMsg);
+        slot.w.removeEventListener('error', onErr);
+        slot.busy = false;
+      };
       slot.w.addEventListener('message', onMsg);
+      slot.w.addEventListener('error', onErr);
       const slice = task.pcm.slice(task.start, task.end);
       slot.busy = true;
       slot.w.postMessage(
@@ -278,6 +326,9 @@ export function createASRPool({ modelId, size, threads, prefetch = false }) {
     let doneCount = 0;
     let fatal = null;
     const retried = new Set();
+    // 两次都失败、被跳过的段序号。带出去给上层，让 UI 能说清「有 N 段没识别出来」，
+    // 而不是让用户对着少了一大半的字幕猜发生了什么。
+    const failed = [];
 
     const consume = async (slot) => {
       while (queue.length) {
@@ -301,8 +352,15 @@ export function createASRPool({ modelId, size, threads, prefetch = false }) {
             if (!slots.length) { fatal = e; return; }
             if (e.stale) return;      // 这个 slot 已经没了，退出它的循环
           } else {
-            fatal = e;
-            return;
+            // 换过会话还是失败：只丢这一段，不能让整条音轨跟着作废。
+            // 原来这里是 `fatal = e; return;` —— 一段坏掉就丢掉后面全部 N 段，
+            // 而且因为是「正常返回」，上层只会看到词数变少、一个字都不报错。
+            // 用户看到的就是「17 分钟的视频只识别出前面几分钟」。
+            console.warn('[asr-pool] 该段两次都失败，跳过并继续', task.i, e);
+            failed.push(task.i);
+            out[task.i] = [];
+            doneCount++;
+            onSegDone?.(task, out[task.i], doneCount, tasks.length);
           }
         }
       }
@@ -310,6 +368,23 @@ export function createASRPool({ modelId, size, threads, prefetch = false }) {
 
     await Promise.all(slots.slice().map(consume));
     if (fatal) throw fatal;
+
+    // 第一遍跑完还有失败段？换会话再战一轮。
+    // 实测失败大多是瞬时的（预览标签页被冻结、内存峰值撞上 GC），
+    // 同一段隔几秒重跑往往就过了。放在这里而不是让用户手动点「重新识别」，
+    // 是因为用户根本不知道缺的是哪几段。
+    if (failed.length && slots.length && !disposed && !fatal && !shouldCancel?.()) {
+      console.info(`[asr-pool] 第一轮有 ${failed.length} 段失败，开始补跑`, failed.slice());
+      const again = failed.splice(0);
+      for (const i of again) { out[i] = null; retried.delete(i); }
+      for (const i of again) queue.push(ordered[i]);
+      await Promise.all(slots.slice().map(consume));
+      if (fatal) throw fatal;
+    }
+    // 把「被跳过的段」随结果一起交出去。数组本身可携带属性，不改变原有
+    // 「返回 Array<Array>」的契约，但上层能据此判断字幕是不是少了一截。
+    out.failed = failed;
+    out.skipped = failed.length;
     return out;
   }
 

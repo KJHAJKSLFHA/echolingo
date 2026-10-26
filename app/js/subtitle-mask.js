@@ -125,8 +125,23 @@ export function createMask({ wrap, video, onBand = null }) {
   canvas.hidden = true;
 
   const chip = document.createElement('div');
-  chip.className = 'submask-chip';
+  chip.className = 'submask-chip tappable';
   chip.hidden = true;
+  // 触屏设备没有 Alt 键，伸不到「按住看原文」；点一下 chip 切换即可。
+  // 用 pointerdown 而不是 click：视频区有拖动/双击，click 会被那套手势吃掉。
+  let peeking = false;
+  /** 真正落地 peek 状态的地方：键盘 Alt 与触摸点击都汇到这里 */
+  function self_peek(on) {
+    peeking = !!on;
+    layer.classList.toggle('peek', peeking);
+    canvas.classList.toggle('peek', peeking);
+    chip.classList.toggle('peek', peeking);
+  }
+  chip.addEventListener('pointerdown', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    self_peek(!peeking);
+  });
 
   // 「在画面上调整位置」的编辑层：虚线框 + 上下两条抓手 + 一句提示。
   // 同样由本模块自建，老 HTML 也不会缺元素。
@@ -366,14 +381,18 @@ export function createMask({ wrap, video, onBand = null }) {
       return { topRatio: state.topRatio, bottomRatio: state.bottomRatio };
     },
 
-    /** 临时揭开原文（按住 Alt 时用） */
+    /** 临时揭开原文（按住 Alt 时用；触屏点 chip 也走这里） */
     peek(on) {
-      layer.classList.toggle('peek', !!on);
-      canvas.classList.toggle('peek', !!on);
-      chip.classList.toggle('peek', !!on);
+      peeking = !!on;
+      self_peek(peeking);
     },
 
-    setChipText(s) { chip.textContent = s; },
+    setChipText(s) {
+      chip.textContent = s;
+      // 换句就把「点开看原文」收回：否则点过一次之后整段视频都摊开着，
+      // 遮挡等于被永久关掉了。
+      if (peeking) self_peek(false);
+    },
 
     reposition,
 

@@ -16,6 +16,12 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 
+// 链接导入的取流接口（/api/url/*）。跟着桌面版走，网页版也能跨域调它。
+let handleUrlApi = null;
+for (const p of ['../url-import.js', '../../url-import.js', './url-import.js']) {
+  try { ({ handleUrlApi } = require(p)); break; } catch { /* 换下一个位置 */ }
+}
+
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -56,6 +62,15 @@ function createSiteServer(root) {
   const ROOT = path.resolve(root);
 
   return http.createServer((req, res) => {
+    // 取流接口要在 405 判断之前接住：它还要处理 OPTIONS 预检
+    if (handleUrlApi && req.url && req.url.split('?')[0].startsWith('/api/url/')) {
+      let apiPath = '/';
+      try {
+        apiPath = decodeURIComponent(new URL(req.url, 'http://127.0.0.1').pathname || '/');
+      } catch { /* 交给接口回 404 */ }
+      if (handleUrlApi(req, res, apiPath)) return;
+    }
+
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', Allow: 'GET, HEAD' });
       return res.end('Method Not Allowed');
@@ -79,9 +94,12 @@ function createSiteServer(root) {
 
     fs.stat(file, (err, st) => {
       if (!err && st.isDirectory()) {
-        file = path.join(file, 'index.html');
-        st = null;
-        err = null;
+        // 拼上 index.html 后必须重新 stat —— 否则下面 !st 恒真，目录永远 404
+        const idx = path.join(file, 'index.html');
+        return fs.stat(idx, (e2, st2) => {
+          if (e2 || !st2 || !st2.isFile()) return notFound(res, pathname);
+          send(res, idx, st2, req);
+        });
       }
       if (err || !st || !st.isFile()) {
         // 单页应用回退：只在「看起来是页面导航」时才回 index.html。

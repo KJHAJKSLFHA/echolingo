@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EchoLingo 取流助手</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1c2530;
+    --muted: #6b7783;
+    --line: #e3e8ee;
+    --brand: #2fa07a;
+    --brand-weak: #eaf6f1;
+    --warn: #b4552a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171b20;
+      --fg: #e8edf2;
+      --muted: #96a2ae;
+      --line: #2a3138;
+      --brand: #46c79b;
+      --brand-weak: #1d3a30;
+      --warn: #e58a5a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    width: 320px;
+    margin: 0;
+    padding: 14px 14px 12px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 13px/1.55 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  h1 {
+    margin: 0 0 2px;
+    font-size: 14px;
+    letter-spacing: .2px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted);
+    flex: none;
+  }
+  .dot.on { background: var(--brand); box-shadow: 0 0 0 3px var(--brand-weak); }
+  .dot.bad { background: var(--warn); }
+  .sub { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
+  .row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; padding: 7px 0;
+    border-top: 1px solid var(--line);
+  }
+  .row:first-of-type { border-top: 0; }
+  .k { color: var(--muted); }
+  .v { font-variant-numeric: tabular-nums; }
+  .ok { color: var(--brand); font-weight: 600; }
+  .bad { color: var(--warn); font-weight: 600; }
+  .tip {
+    margin-top: 10px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    background: var(--brand-weak);
+    color: var(--fg);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  a { color: var(--brand); }
+  .foot { margin-top: 10px; font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <h1><span class="dot" id="dot"></span>EchoLingo 取流助手</h1>
+  <p class="sub" id="ver">正在检查…</p>
+
+  <div class="row"><span class="k">扩展</span><span class="v" id="sExt">—</span></div>
+  <div class="row"><span class="k">YouTube</span><span class="v" id="sYt">—</span></div>
+  <div class="row"><span class="k">哔哩哔哩</span><span class="v" id="sBili">—</span></div>
+  <div class="row"><span class="k">跨域放行规则</span><span class="v" id="sRule">—</span></div>
+
+  <div class="tip" id="tip">
+    装好这个扩展后，直接打开 EchoLingo 网页版，点顶栏的「链接导入」就能用，不用再下载任何安装包。
+  </div>
+
+  <p class="foot">取流在浏览器里完成：YouTube 走 ANDROID_VR 客户端接口，哔哩哔哩走开放接口 + 注入 Referer。</p>
+
+  <script src="popup.js"></script>
+</body>
+</html>

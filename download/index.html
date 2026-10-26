@@ -205,8 +205,8 @@ footer {
       <span class="t-es">Descargar EchoLingo</span>
     </h1>
     <p class="lead">
-      <span class="t-zh">这里有两个东西，按需要挑一个装就行。<b>完整软件包</b>是整站离线版：网页界面、识别与翻译模型、取流能力全在里面，装上就能用，断网也能学；<b>取流助手</b>只有取流那一段，给「已经在用网页版、只想让链接能直接导」的人。</span>
-      <span class="t-en">Two things live here — pick one. The <b>full package</b> is the whole site offline: interface, recognition and translation models, and link fetching, all included; it works with no network at all. The <b>stream helper</b> is just the fetching part, for people already using the web app who only want links to open.</span>
+      <span class="t-zh">这里有三样东西，按需要挑一个就行。<b>浏览器扩展</b>最省事：装上就能在网页版里直接导入 YouTube / 哔哩哔哩链接，不用下载任何安装包；<b>完整软件包</b>是整站离线版：网页界面、识别与翻译模型、取流能力全在里面，断网也能学；<b>取流助手</b>是给旧版准备的本机小程序，只有取流那一段。</span>
+      <span class="t-en">Three things live here — pick one. The <b>browser extension</b> is the easiest: install it and the web app can import YouTube / Bilibili links directly, with no installer to download. The <b>full package</b> is the whole site offline: interface, recognition and translation models, and link fetching, all included. The <b>stream helper</b> is the older local app for fetching only.</span>
       <span class="t-es">Aquí hay dos cosas: elige una. El <b>paquete completo</b> es todo el sitio sin conexión (interfaz, modelos de reconocimiento y traducción, y descarga de enlaces). El <b>asistente de descarga</b> es solo esa parte, para quien ya usa la web y solo quiere que los enlaces funcionen.</span>
     </p>
     <span class="pill">✓
@@ -225,6 +225,12 @@ footer {
     </div>
   </header>
 
+  <div class="note warn" id="mac-open">
+    <span class="t-zh"><b>macOS 第一次打不开是很正常的</b>（没做 Apple 公证，系统会拦）。双击 App，弹「无法验证开发者」→ 点<b>「取消」</b>；然后 <b>系统设置 → 隐私与安全性</b>，往下滚到「安全性」，会看到一行「已阻止打开 EchoLingo…」，点<b>「仍要打开」</b>，输密码或指纹；再双击一次 App，弹窗里点<b>「打开」</b>。之后就不再问了。<br>想跳过这一步，终端一行：<code>xattr -dr com.apple.quarantine /Applications/EchoLingo.app</code></span>
+    <span class="t-en"><b>On macOS the first launch is blocked — that is expected</b> (the app is not notarised by Apple). Double-click it, and when “unidentified developer” appears click <b>Cancel</b>. Then <b>System Settings → Privacy &amp; Security</b>, scroll to “Security”, find “EchoLingo was blocked from use…”, click <b>Open Anyway</b> and authenticate. Double-click once more and choose <b>Open</b>. It will not ask again.<br>To skip it entirely, one line in Terminal: <code>xattr -dr com.apple.quarantine /Applications/EchoLingo.app</code></span>
+    <span class="t-es"><b>En macOS el primer arranque se bloquea, es normal</b> (la app no está notarizada). Haz doble clic y, cuando aparezca «desarrollador no identificado», pulsa <b>Cancelar</b>. Luego <b>Ajustes → Privacidad y seguridad</b>, baja a «Seguridad», busca «Se bloqueó el uso de EchoLingo…», pulsa <b>Abrir igualmente</b> y autentícate. Vuelve a abrirla y elige <b>Abrir</b>. No volverá a preguntar.<br>Para saltarlo, una línea en Terminal: <code>xattr -dr com.apple.quarantine /Applications/EchoLingo.app</code></span>
+  </div>
+
   <h3 class="group">
     <span class="t-zh">完整软件包 · 装这个就不用再开网站</span>
     <span class="t-en">Full package — install this and you never need the site again</span>
@@ -242,12 +248,17 @@ footer {
       </p>
       <div class="dl">
         <a class="btn primary" href="files/EchoLingo-macOS-arm64.zip" download>
-          Apple Silicon <small>M1–M4 · 约 490 MB</small>
+          Apple Silicon <small>M1–M4 · 约 515 MB</small>
         </a>
         <a class="btn" href="files/EchoLingo-macOS-x64.zip" download>
-          Intel <small>x64 · 约 500 MB</small>
+          Intel <small>x64 · 约 522 MB</small>
         </a>
       </div>
+      <p class="alt">
+        <span class="t-zh">⚠️ 第一次打开被系统拦住？看上面的「隐私与安全性」那一步，不是文件坏了。</span>
+        <span class="t-en">⚠️ Blocked on first launch? Use the Privacy &amp; Security step above — the file is fine.</span>
+        <span class="t-es">⚠️ ¿Bloqueada al abrir? Usa el paso de Privacidad y seguridad de arriba: el archivo está bien.</span>
+      </p>
       <p class="alt">
         <span class="t-zh">不确定哪种？点左上角  → 关于本机，看「芯片」一栏写着 Apple 还是 Intel。</span>
         <span class="t-en">Not sure which one? Apple menu → About This Mac, check the “Chip” line.</span>
@@ -264,7 +275,7 @@ footer {
       </p>
       <div class="dl">
         <a class="btn primary" href="files/EchoLingo-Windows-x64.zip" download>
-          Windows x64 <small>.zip · 约 540 MB</small>
+          Windows x64 <small>.zip · 约 566 MB</small>
         </a>
       </div>
       <p class="alt">
@@ -275,6 +286,47 @@ footer {
     </div>
 
   </div>
+
+  <h3 class="group" id="ext">
+    <span class="t-zh">浏览器扩展 · 装一次就行 · 只有 21 KB</span>
+    <span class="t-en">Browser extension — install once · 21 KB</span>
+    <span class="t-es">Extensión del navegador — se instala una vez · 21 KB</span>
+  </h3>
+
+  <p class="note">
+    <span class="t-zh">给<b>用网页版</b>的人，也是最推荐的方式：装一个浏览器扩展，网页版就能直接导入 YouTube 与哔哩哔哩的链接。扩展负责把视频取回本机，识别和翻译仍然全在你的浏览器里完成，不上传任何内容。不用下载安装包、不用开端口、不用常驻后台。</span>
+    <span class="t-en">For people <b>using the web app</b> — and the recommended way: install one browser extension and the web app can import YouTube and Bilibili links directly. The extension fetches the video locally; recognition and translation still happen entirely in your browser, nothing is uploaded. No installer, no open ports, nothing left running in the background.</span>
+    <span class="t-es">Para quien <b>usa la web</b> y la forma recomendada: instala una extensión y la web podrá importar enlaces de YouTube y Bilibili directamente. La extensión obtiene el vídeo en local; el reconocimiento y la traducción siguen ocurriendo en tu navegador. Sin instalador, sin puertos abiertos.</span>
+  </p>
+
+  <div class="cards">
+    <div class="card">
+      <h2>Microsoft Edge / Chrome <span class="os">111+ · macOS / Windows / Linux</span></h2>
+      <p>
+        <span class="t-zh">下载 zip → 解压到一个固定文件夹（别删）→ 打开 <code>edge://extensions</code> 或 <code>chrome://extensions</code> → 打开右上角「开发人员模式」→ 点「加载解压缩的扩展」→ 选中解压出来的 <code>EchoLingo-Ext</code> 文件夹。装好后回到网页版点「链接导入」，粘贴链接即可。</span>
+        <span class="t-en">Download the zip → unzip it to a folder you will keep → open <code>edge://extensions</code> or <code>chrome://extensions</code> → turn on “Developer mode” → click “Load unpacked” → pick the unzipped <code>EchoLingo-Ext</code> folder. Then go back to the web app and click “Import link”.</span>
+        <span class="t-es">Descarga el zip → descomprímelo en una carpeta que vayas a conservar → abre <code>edge://extensions</code> o <code>chrome://extensions</code> → activa «Modo de desarrollador» → pulsa «Cargar descomprimida» → elige la carpeta <code>EchoLingo-Ext</code>. Luego vuelve a la web y pulsa «Importar enlace».</span>
+      </p>
+      <div class="dl">
+        <a class="btn primary" href="files/EchoLingo-Ext.zip" download>
+          EchoLingo-Ext.zip <small>扩展本体 · 21 KB</small>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <ol class="steps">
+    <li>
+      <span class="t-zh"><b>只支持 YouTube 与哔哩哔哩</b>，两家都实测可用：YouTube 直接取官方字幕，不用等识别；哔哩哔哩没有字幕的走自动语音识别。</span>
+      <span class="t-en"><b>YouTube and Bilibili only</b>, both tested end to end: YouTube ships official captions that load instantly; Bilibili videos without captions go through speech recognition.</span>
+      <span class="t-es"><b>Solo YouTube y Bilibili</b>, ambos probados: YouTube trae subtítulos oficiales al instante; los vídeos de Bilibili sin subtítulos pasan por reconocimiento de voz.</span>
+    </li>
+    <li>
+      <span class="t-zh"><b>扩展更新后要重新加载。</b>换新版本时，把新 zip 解压覆盖原文件夹，然后在扩展管理页点一下刷新按钮即可。</span>
+      <span class="t-en"><b>Reload after updating.</b> Unzip the new version over the old folder, then hit the reload button on the extensions page.</span>
+      <span class="t-es"><b>Recarga tras actualizar.</b> Descomprime la nueva versión sobre la carpeta anterior y pulsa recargar en la página de extensiones.</span>
+    </li>
+  </ol>
 
   <h3 class="group" id="helper">
     <span class="t-zh">取流助手 · 只有取流，约 190–240 MB</span>
@@ -480,6 +532,8 @@ footer {
     if (local) return;
     var RELEASE = 'https://github.com/KJHAJKSLFHA/echolingo/releases/latest/download/';
     document.querySelectorAll('a[href^="files/"]').forEach(function (a) {
+      // 扩展只有 21 KB，随站点一起部署，不必绕到 Release（Release 上也不放它）
+      if (a.getAttribute('href') === 'files/EchoLingo-Ext.zip') return;
       a.href = RELEASE + a.getAttribute('href').slice('files/'.length);
     });
   })();

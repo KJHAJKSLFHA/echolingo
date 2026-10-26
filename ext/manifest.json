@@ -1,0 +1,71 @@
+{
+  "manifest_version": 3,
+  "name": "EchoLingo 取流助手",
+  "short_name": "EchoLingo",
+  "version": "1.0.0",
+  "description": "在浏览器里直接取回 YouTube 与哔哩哔哩的视频/音轨，交给 EchoLingo 做精听识别。装好即用，不用再下载桌面版。",
+  "minimum_chrome_version": "111",
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "permissions": [
+    "storage",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://youtube.com/*",
+    "https://m.youtube.com/*",
+    "https://youtu.be/*",
+    "https://*.googlevideo.com/*",
+    "https://api.bilibili.com/*",
+    "https://*.bilibili.com/*",
+    "https://b23.tv/*",
+    "https://*.bilivideo.com/*",
+    "https://*.bilivideo.cn/*",
+    "https://*.hdslb.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "http://192.168.31.196/*",
+        "https://echoling.netlify.app/*",
+        "https://*.netlify.app/*",
+        "https://*.github.io/*",
+        "file:///*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "media_headers",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
+  "action": {
+    "default_title": "EchoLingo 取流助手",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/16.png",
+      "48": "icons/48.png",
+      "128": "icons/128.png"
+    }
+  }
+}

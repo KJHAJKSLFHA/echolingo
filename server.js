@@ -15,6 +15,8 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 
+const { handleUrlApi } = require('./url-import.js');
+
 const ROOT = __dirname;
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -50,6 +52,13 @@ const IMMUTABLE = /\.(onnx|wasm|spm|bin|m4a|mp3|mp4|webm|wav)$/i;
 
 function createAppServer() {
   return http.createServer((req, res) => {
+  // 链接导入接口要收 POST，所以必须在下面的 405 检查之前分流。
+  if (req.url && req.url.startsWith('/api/url/')) {
+    let apiPath = '/';
+    try { apiPath = url.parse(req.url).pathname || '/'; } catch { /* 用它当 404 */ }
+    if (handleUrlApi(req, res, apiPath)) return;
+  }
+
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', Allow: 'GET, HEAD' });
     return res.end('Method Not Allowed');

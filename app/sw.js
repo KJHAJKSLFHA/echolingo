@@ -20,7 +20,13 @@
 //   3. 只有真正不可变的大文件（模型 onnx / wasm / 音视频 / 词典分片）走 cache-first。
 // ==========================================================================
 
-const VERSION = 'echolingo-v32';
+const VERSION = 'echolingo-v36';
+
+// 模型 / wasm / 音视频 / 词典分片单独放一个**永不随版本删除**的缓存。
+// 它们内容按文件名固定、一年 immutable，没有任何理由每次升级重下 180MB；
+// 混在 VERSION 里被 activate 一起清掉，等于每发一版就让所有老用户重新付费下载。
+// 需要强制刷新模型时，手动改这里的版本号即可（比如 echolingo-assets-v2）。
+const ASSET_CACHE = 'echolingo-assets-v1';
 
 // 需要离线可用的外壳。列表只影响「首次装完即可离线」的体验，
 // 真正兜底的是运行时缓存：任何被请求过的资源都会自动进缓存。
@@ -71,9 +77,28 @@ self.addEventListener('install', () => {
 self.addEventListener('activate', (e) => {
   e.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(
-      keys.filter((k) => k.startsWith('echolingo') && k !== VERSION).map((k) => caches.delete(k)),
-    );
+    const stale = keys.filter((k) => k.startsWith('echolingo') && k !== VERSION && k !== ASSET_CACHE);
+
+    // 迁移：旧版本桶里已经下好的模型 / wasm 先搬进长命桶，再删旧桶。
+    // 没有这一步，跨过这次改动的老用户仍要在下一次发版时重下 180MB —— 只有一回，
+    // 但那一回正好落在我们开始统计额度的月份里，白花钱。
+    if (stale.length) {
+      try {
+        const assets = await caches.open(ASSET_CACHE);
+        for (const k of stale) {
+          const old = await caches.open(k);
+          for (const req of await old.keys()) {
+            const path = new URL(req.url).pathname;
+            if (!IMMUTABLE.test(path) && !DICT_SHARD.test(path)) continue;
+            if (await assets.match(req, { ignoreSearch: true })) continue;
+            const res = await old.match(req);
+            if (res) await assets.put(req, res);
+          }
+        }
+      } catch { /* 迁移失败就按老路子重下，不影响可用性 */ }
+      await Promise.all(stale.map((k) => caches.delete(k)));
+    }
+
     await self.clients.claim();
     precache().catch(() => {});
   })());
@@ -89,7 +114,8 @@ self.addEventListener('fetch', (e) => {
   const navigate = req.mode === 'navigate';
 
   e.respondWith((async () => {
-    const cache = await caches.open(VERSION);
+    // 不可变资源进长命桶，页面代码进版本桶 —— 见顶部 ASSET_CACHE 注释
+    const cache = await caches.open(immutable ? ASSET_CACHE : VERSION);
 
     // —— 不可变大文件：命中即返回，绝不再走网络 ——
     if (immutable) {

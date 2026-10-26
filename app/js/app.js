@@ -16,10 +16,11 @@ import * as SUBMASK from './subtitle-mask.js';
 import * as ASR from './asr.js';
 import * as MT from './mt.js';
 import * as SRS from './srs.js';
+import * as EXT from './url-ext.js';
 
 // 与 index.html 里的 window.__ECHOLINGO_VER__ 必须保持一致。
 // 改这两个值时请一起改（sw.js 的 VERSION 也顺手升一级）。
-export const APP_VER = '3.17.0';
+export const APP_VER = '3.18.3';
 
 /* ============================ 状态 ============================ */
 
@@ -806,6 +807,9 @@ function loadSession(key = null) {
     cues: Array.isArray(v.cues) ? v.cues.filter((c) => c && Number.isFinite(+c.start)) : [],
     at: Number.isFinite(+v.at) ? Math.max(0, +v.at) : 0,
     status: ['ready', 'partial', 'failed', 'processing'].includes(v.status) ? v.status : 'partial',
+    gaps: Number(v.gaps) || 0,
+    gapTotal: Number(v.gapTotal) || 0,
+    gapList: Array.isArray(v.gapList) ? v.gapList.filter((n) => Number.isInteger(n)) : [],
     updatedAt: Number(v.updatedAt) || 0,
   };
 }
@@ -863,6 +867,12 @@ function persistSession({ status } = {}) {
       ? Math.max(0, +$('#player').currentTime || 0)
       : Math.max(0, +S.resumeAt || 0),
     status: status || S.lastStatus || 'partial',
+    // 这次识别有没有段落没跑出来。0 = 完整字幕。
+    // 恢复时必须读它：一份「缺 5 段」的存档，以前会被当成「已识别」直接挡住重新识别，
+    // 于是用户每次打开同一素材看到的都还是那半截字幕，越用越像软件坏了。
+    gaps: S.gapSegments || 0,
+    gapTotal: S.gapTotal || 0,
+    gapList: (S.gapList || []).slice(0, 200),
     updatedAt: Date.now(),
   };
   const json = JSON.stringify(payload);
@@ -1425,6 +1435,32 @@ function bindUI() {
       if (S.cues.length) { S.followPaused = true; showFollowReturn(true); }
     }, { passive: true });
   });
+  // 平板上没有键盘，←/→ 切句只能去点那个小按钮。视频区左右滑动补上。
+  // 只认「明显的横向意图」：纵向或斜向都交给页面滚动，避免误触。
+  (() => {
+    const zone = $('#playerWrap');
+    const video = $('#player');
+    let sx = 0, sy = 0, active = false;
+    zone.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) { active = false; return; }
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY; active = true;
+    }, { passive: true });
+    zone.addEventListener('touchend', (e) => {
+      if (!active) return;
+      active = false;
+      const t = e.changedTouches[0];
+      if (!t) return;
+      const dx = t.clientX - sx, dy = t.clientY - sy;
+      // 阈值 56px 且横向位移必须超过纵向的 1.6 倍，才算一次切句
+      if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+      // 进度条上滑动是在拖时间轴，不能同时切句
+      if (e.target.closest('#seek')) return;
+      // 还没出字幕时滑动没意义，别把用户的手势吞掉
+      if (!S.cues.length) return;
+      jumpCue(dx < 0 ? 1 : -1);
+    }, { passive: true });
+  })();
+
   $('#viewSeg').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
@@ -2047,9 +2083,17 @@ async function openVideoFile(file, opts = {}) {
   toast(t('toast.loaded', { name: file.name, size: (file.size / 1048576).toFixed(1) }));
 
   // 恢复的字幕直接显示在右侧；只有没有字幕时才自动识别
+  // 「有字幕」不等于「字幕是完整的」：上次识别缺了段的存档要标出来，
+  // 并且允许重新识别把缺口补上，否则用户永远卡在那半截字幕上。
+  S.gapSegments = restored ? (restored.gaps || 0) : 0;
+  S.gapTotal = restored ? (restored.gapTotal || 0) : 0;
+  S.gapList = restored && Array.isArray(restored.gapList) ? restored.gapList.slice() : [];
   if (restored && restored.cues.length) {
     renderSubs();
     toast(t('dz.recentStatus', { n: restored.cues.length, t: fmtTime(restored.at || 0) }), 4000);
+    if (S.gapSegments > 0) {
+      toast(t('toast.recogPartial', { n: S.gapSegments, total: S.gapTotal || '?' }), 9000);
+    }
     const missingZh = restored.cues.some((c) => !c.zh);
     if (missingZh && S.settings.transMode === 'local') translateAll({ retry: true });
   } else if (S.settings.autoRun) {
@@ -3534,11 +3578,129 @@ const state = (id, cls) => { const n = document.getElementById(id); if (n) n.dat
 
 /* ============================ 识别流程 ============================ */
 
+/**
+ * 只补上次缺的那几段。
+ * @returns {Promise<boolean>} true = 补跑完成（无论是否全部补上）；false = 这条路走不通，请调用方走全文重识别
+ */
+async function retryGaps(file) {
+  const idx = (S.gapList || []).filter((n) => Number.isInteger(n) && n >= 0);
+  if (!idx.length) return false;
+
+  const run = ++S.asrRun;
+  const cancelled = () => S.asrRun !== run;
+
+  S.busy = 'asr';
+  S.recog = true;
+  S.lastFail = null;
+  S.lastStatus = 'processing';
+  persistSession({ status: 'processing' });
+  const btn = $('#btnTranscribe');
+  btn.disabled = true;
+  setText('btnTranscribeLabel', t('top.running'));
+  dot('dotAsr', 'busy');
+  showFineProgress('asr', 0, t('prog.decode'));
+  renderSubs($('#subSearch').value.trim());
+
+  try {
+    const pcm = await ASR.decodeAudio(file, $('#player').duration, () => showProgress(2, t('prog.decode')));
+    if (cancelled()) return true;
+
+    // 段号是「同一切段算法下的下标」。这里必须核对总段数：
+    // 换了切段算法、换了文件、或时长被重新解码成不同长度，下标都会漂移，
+    // 那样补出来的词会贴到错误的位置上 —— 宁可不补，也不能贴错。
+    const segs = ASR.segmentsOf(pcm);
+    if (segs.length !== (S.gapTotal || segs.length)) {
+      console.warn(`[gap] 段数对不上（存档 ${S.gapTotal} / 当前 ${segs.length}），改走全文重识别`);
+      S.busy = null; S.recog = false;
+      btn.disabled = false;
+      setText('btnTranscribeLabel', t('top.redo'));
+      dot('dotAsr', 'idle');
+      hideProgress();
+      return false;
+    }
+
+    const useWordTs = S.settings.wordTs !== 'off';
+    const { words, covered, missed } = await ASR.transcribeSegments(pcm, {
+      indices: idx,
+      wordTimestamps: useWordTs,
+      shouldCancel: cancelled,
+      onProgress: (p) => {
+        if (p.phase === 'transcribe') {
+          showFineProgress('asr', p.pct, t('prog.seg', { seg: p.seg, total: p.total, words: p.words, eta: '' }));
+        }
+      },
+    });
+    if (cancelled()) return true;
+
+    // 合并：把补齐的词按时间插进现有字幕，再重新拼句。
+    // 直接拼句而不是往 cues 里塞，是因为一句话可能横跨缺口边界，
+    // 只有重新分组才能让边界两侧的文本接上。
+    const oldWords = [];
+    for (const c of S.cues) {
+      for (const w of (c.words || [])) oldWords.push({ text: w.w, start: w.s, end: w.e });
+    }
+    const all = oldWords.concat(words).sort((a, b) => a.start - b.start);
+
+    // 只有真的补上了东西才重建字幕，否则保持原样（避免把已有字幕洗掉）
+    if (covered.length && all.length) {
+      const sentences = SUB.groupWordsIntoSentences(all);
+      S.cues = sentences.map((c, i) => ({ ...c, i }));
+      S.activeIdx = -1;
+      renderSubs($('#subSearch').value.trim());
+    }
+
+    S.gapList = missed.slice();
+    S.gapSegments = missed.length;
+    S.gapTotal = segs.length;
+    S.busy = null;
+    S.recog = false;
+    S.lastStatus = missed.length ? 'partial' : 'ready';
+    btn.disabled = false;
+    setText('btnTranscribeLabel', t('top.redo'));
+    dot('dotAsr', 'ok');
+    hideProgress();
+    if (missed.length) {
+      toast(t('toast.recogPartial', { n: missed.length, total: segs.length }), 9000);
+    } else {
+      toast(t('toast.retryGaps', { n: covered.length, left: 0 }), 6000);
+    }
+    persistSession({ status: S.lastStatus });
+    if (S.settings.transMode === 'local') translateAll({ retry: true });
+    return true;
+  } catch (e) {
+    console.warn('[gap] 补缺口失败，交回全文重识别', e);
+    S.busy = null;
+    S.recog = false;
+    btn.disabled = false;
+    setText('btnTranscribeLabel', t('top.redo'));
+    dot('dotAsr', 'idle');
+    hideProgress();
+    return false;
+  }
+}
+
 async function runTranscribe() {
   if (!LIC_ON && !needLicense()) return;
-  if (S.busy) { toast(t('toast.busy')); return; }
   const file = S.file;
   if (!file) { toast(t('toast.needFile')); return; }
+
+  // 忙的时候不能一点就吞掉。恢复存档后 translateAll / 模型预装载会占着 busy，
+  // 这时「重新识别」按钮是亮的，用户点下去消息直接被丢弃，看起来就是「点了没反应」。
+  // 所以：正在识别 → 明确告知；其它占用 → 排队，等空闲后自动接着跑。
+  if (S.busy) {
+    if (S.busy === 'asr') { toast(t('toast.busy')); return; }
+    toast(t('toast.waitBusy'), 3000);
+    await waitIdle();
+    if (S.busy) { toast(t('toast.busy')); return; }
+  }
+
+  // 「重新识别」在有缺口段号时走补缺口，而不是整条音轨重跑一遍：
+  // 上次只是内存吃紧崩了几段，全文重算既慢又很可能在同一处再崩一次。
+  if (Array.isArray(S.gapList) && S.gapList.length) {
+    const done = await retryGaps(file);
+    if (done) return;
+    // 补不了（段号对不上等）就继续往下走全文重识别，绝不让用户卡住
+  }
 
   const run = ++S.asrRun;
   const cancelled = () => S.asrRun !== run;
@@ -3585,7 +3747,7 @@ async function runTranscribe() {
     const useWordTs = S.settings.wordTs !== 'off';
 
     showProgress(3, t('prog.loadAsr'));
-    const { words, cancelled: wasCancelled } = await ASR.transcribe(pcm, {
+    const { words, cancelled: wasCancelled, skipped, total: totalSeg, failedSegs } = await ASR.transcribe(pcm, {
       wordTimestamps: useWordTs,
       file,
       durationHint: $('#player').duration,
@@ -3626,7 +3788,21 @@ async function runTranscribe() {
     paint(words, true);
     showFineProgress('asr', 100, t('prog.stageReady'));
     hideProgress();
-    toast(t('toast.recogDone', { n: S.cues.length }));
+    // 有段落没跑出来必须说清楚。以前这里只有一句「识别完成：N 句」，
+    // 少的那些段一声不响地消失，用户只会以为软件坏了。
+    const gapN = skipped || 0;
+    const gapTotal = totalSeg || 0;
+    if (gapN > 0) {
+      toast(t('toast.recogPartial', { n: gapN, total: gapTotal }), 9000);
+      S.lastFail = { kind: 'asr-gap', msg: `${gapN}/${gapTotal}`, segments: gapN, total: gapTotal };
+    } else {
+      toast(t('toast.recogDone', { n: S.cues.length }));
+    }
+    // 缺口记进存档：下次打开同一素材时知道这份字幕是不完整的，
+    // 连段号一起存，将来才可能「只补这几段」而不是全文重跑。
+    S.gapSegments = gapN;
+    S.gapTotal = gapTotal;
+    S.gapList = gapN > 0 ? (failedSegs || []).slice() : [];
     needTranslate = S.settings.transMode === 'local';
   } catch (e) {
     if (cancelled()) {
@@ -4027,11 +4203,12 @@ function siteRoot() {
   return location.href.replace(/[^/]*$/, '');
 }
 // 没装助手时给的下载地址：跟着站点走，换域名也不用改代码
-const HELPER_DOWNLOAD = siteRoot() + 'download/helper/';
+const HELPER_DOWNLOAD = siteRoot() + 'download/#ext';
 const UL = {
   ready: null,     // null 未探测 / true 可用 / false 不可用
   base: '',        // '' = 同源；否则是 http://127.0.0.1:87xx
   helper: false,   // 是否走的本机助手
+  ext: false,      // 是否走浏览器扩展（装了取流助手）
   why: '',
   info: null,      // inspect 结果
   mode: 'video',   // 自动决定的取流方式：video / subtitle
@@ -4046,6 +4223,14 @@ const apiUrl = (path) => (UL.base || '') + URL_API + path;
 const absUrl = (u) => (UL.base && u && u.charAt(0) === '/' ? UL.base + u : u);
 
 async function apiGet(path) {
+  // 扩展在位时，接口由扩展后台承担（job 轮询走这里）
+  if (UL.ext) {
+    const jobId = path.replace(/^job\//, '');
+    const res = await EXT.extCall('job', { jobId: decodeURIComponent(jobId) });
+    if (!res) throw new Error(t('url.needLocal'));
+    if (res.ok === false) throw EXT.extError(res, t('url.fail'));
+    return res;
+  }
   const r = await fetch(apiUrl(path), { cache: 'no-store' });
   const ct = r.headers.get('content-type') || '';
   if (!ct.includes('application/json')) throw new Error(t('url.needLocal'));
@@ -4062,6 +4247,15 @@ function apiError(data) {
 }
 
 async function apiPost(path, body) {
+  if (UL.ext) {
+    const action = path === 'inspect' ? 'inspect' : path === 'open' ? 'open' : '';
+    if (action) {
+      const res = await EXT.extCall(action, body || {});
+      if (!res) throw new Error(t('url.needLocal'));
+      if (res.ok === false) throw EXT.extError(res, t('url.fail'));
+      return res;
+    }
+  }
   const r = await fetch(apiUrl(path), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -4088,6 +4282,19 @@ async function probeHealth(base) {
 
 async function probeUrl() {
   if (UL.ready !== null) return UL.ready;
+
+  // 0) 浏览器扩展：装了「取流助手」，网页版什么都不用装就能取流，优先级最高
+  if (await EXT.extAvailable()) {
+    const h = await EXT.extCall('health');
+    if (h && h.ok) {
+      UL.ready = true;
+      UL.base = '';
+      UL.helper = false;
+      UL.ext = true;
+      UL.why = '';
+      return true;
+    }
+  }
 
   // 1) 同源：自己开着 server.js（本地开发 / 自建）
   let data = await probeHealth('');
@@ -4162,7 +4369,7 @@ function urlHint() {
 function syncHelperLink() {
   const a = $('#urlGetHelper');
   if (!a) return;
-  const need = UL.ready === false;
+  const need = UL.ready === false && !UL.ext;
   a.hidden = !need;
   if (need) a.href = HELPER_DOWNLOAD;
 }
@@ -4346,9 +4553,19 @@ async function finishUrlImport(res, mode, degraded) {
   setText('urlStage', t('url.stageLoad'));
   let file;
   try {
-    const r = await fetch(absUrl(res.mediaUrl), { cache: 'no-store' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const blob = await r.blob();
+    // 装了扩展且结果是代理流：媒体主机的 CORS 不给页面放行
+    // （YouTube 只发 vary: Origin 不发 ACAO；哔哩哔哩分片认 Referer），
+    // 页面自己 fetch 必失败，因此让扩展后台拉字节、分块传回、这里拼成 Blob。
+    const blob = res.proxy && UL.ext
+      ? await EXT.extMediaBlob(res.mediaUrl, res.mediaSize, (got, total) => {
+          const pct = total ? Math.min(100, Math.round((got / total) * 100)) : 0;
+          if (pct) setText('urlStage', `${t('url.stageLoad')} ${pct}%`);
+        })
+      : await (async () => {
+          const r = await fetch(absUrl(res.mediaUrl), { cache: 'no-store' });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.blob();
+        })();
     file = new File([blob], res.mediaName || 'video.mp4', {
       type: res.mediaType || blob.type || 'video/mp4',
     });

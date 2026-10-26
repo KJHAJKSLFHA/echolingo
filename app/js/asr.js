@@ -430,8 +430,69 @@ async function transcribePooled(pcm, { onProgress, wordTimestamps, onWords, shou
   );
   const words = [];
   for (const r of results) if (r) words.push(...r);
+  // 池子把「两次都失败、被跳过的段」挂在数组上带出来了。
+  // 以前这些段是 null，被下面这行 `if (r)` 静默吃掉：字幕少一大截，日志一片安静，
+  // 用户完全不知道为什么 17 分钟的视频只出前几分钟。
+  const skipped = results.skipped || 0;
+  // 全军覆没（比如会话全崩）不能假装成功：一段都没过就如实抛错，让上层走兜底路径。
+  if (skipped && skipped >= total) {
+    throw new Error(`全部 ${total} 段都识别失败，可能是设备内存不足或模型文件损坏`);
+  }
+  if (skipped) {
+    console.warn(`[asr] 有 ${skipped}/${total} 段识别失败被跳过，字幕会出现缺口`, results.failed);
+  }
   onProgress?.({ phase: 'transcribe', pct: 100, seg: total, total, words: words.length });
-  return { words, cancelled: !!shouldCancel?.() };
+  // failedSegs 带出去，好让上层「只补这几段」用；skipped 只给个数量，定位不到具体缺口。
+  return { words, cancelled: !!shouldCancel?.(), skipped, total, failedSegs: (results.failed || []).slice() };
+}
+
+/** 切段结果单独暴露：上层要把「上次缺了哪几段」换算回时间位置时需要它。 */
+export function segmentsOf(pcm) {
+  return clampSegments(segmentAudio(pcm));
+}
+
+/**
+ * 只重跑指定的几段（补缺口专用）。
+ *
+ * 为什么值得单独做一条路：一份 17 分钟的音轨切出四十来段，上次只因设备内存紧
+ * 崩了其中三、四段，用户点一次「重新识别」却要把整条音轨从头再算一遍 ——
+ * 白花十几分钟，还多半会把同样的段再崩一次。这里只把缺的那几段送进池子。
+ *
+ * 段号以 segmentsOf(pcm) 的下标为准；pcm 必须与上次是同一份音频（同一切段算法、
+ * 同一采样率），否则段号对不上。调用方负责保证这一点。
+ *
+ * @returns {Promise<{words:Array, covered:number[], missed:number[], total:number}>}
+ */
+export async function transcribeSegments(pcm, {
+  indices = [], onProgress, wordTimestamps = true, shouldCancel,
+} = {}) {
+  const segs = segmentsOf(pcm);
+  const total = segs.length;
+  const want = [...new Set(indices)]
+    .filter((i) => Number.isInteger(i) && i >= 0 && i < total)
+    .sort((a, b) => a - b);
+  if (!want.length) return { words: [], covered: [], missed: [], total };
+
+  const p = await ensurePool(onProgress);
+  const tasks = want.map((orig, k) => ({
+    start: segs[orig].start, end: segs[orig].end, pcm, i: k,
+  }));
+  const results = await p.run(tasks, { wordTimestamps, shouldCancel });
+
+  const words = [];
+  const covered = [];
+  const missed = [];
+  want.forEach((orig, k) => {
+    const r = results[k];
+    if (Array.isArray(r) && r.length) { words.push(...r); covered.push(orig); }
+    else missed.push(orig);
+  });
+  words.sort((a, b) => a.start - b.start);
+  if (missed.length) {
+    console.warn(`[asr] 补缺口：${missed.length}/${want.length} 段仍然没跑出来`, missed);
+  }
+  onProgress?.({ phase: 'transcribe', pct: 100, seg: want.length, total: want.length, words: words.length });
+  return { words, covered, missed, total };
 }
 
 /**

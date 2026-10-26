@@ -63,7 +63,9 @@ export function parseVTT(text) {
     if (!tl || !tl.includes('-->')) continue;
     const [a, b] = tl.split('-->');
     const start = parseTime(a);
-    const end = parseTime(b.split(/\s+/)[0]);
+    // 右半个时间轴以空格开头（`--> 00:00:03.040`），直接 split(/\s+/)[0] 会拿到
+    // 空串，parseTime 返回 null，结果每一条字幕都被丢掉。必须先 trim 再取第一段。
+    const end = parseTime(String(b || '').trim().split(/\s+/)[0]);
     if (start === null || end === null) continue;
     const body = lines.slice(i + 1).join('\n')
       .replace(/<[^>]+>/g, '')

@@ -601,13 +601,48 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 8px) } to { opacity: 1; transform: translate(-50%, 0) } }
 
 /* 窄屏 */
-@media (max-width: 1080px) {
+/* 竖握的平板和手机：上下叠放。原来给 .stage 留 62vh、给 .reader 留 74vh，
+   两个百分比相加 136vh，竖握首屏必然装不下，画面和字幕各露一半。
+   改成由 flex 分配：播放器按 16:9 取高度，字幕区拿走剩下的。
+   横握（1024×768 / 1080×810）不叠 —— 那一点高度叠起来字幕只剩 95px，
+   左右并排时右边一栏有 388px 宽，本来就是这套界面的正常形态。 */
+@media (max-width: 1080px) and (orientation: portrait) {
   .workspace { flex-direction: column; overflow-y: auto; }
-  .stage { min-height: 62vh; }
-  .reader { flex: 1 1 auto; max-height: 74vh; }
+  .stage { flex: 0 0 auto; min-height: 0; }
+  .player-wrap { aspect-ratio: 16 / 9; flex: 0 0 auto; max-height: 46vh; }
+  .player-wrap.audio-only { aspect-ratio: auto; min-height: 150px; max-height: none; }
+  .reader { flex: 1 1 auto; min-height: 34vh; max-height: none; }
   .brand-text span { display: none; }
   .topbar-left { gap: 10px; }
 }
+/* 手机横握（高度很浅）：仍然叠放，否则播放器会把整屏吃掉 */
+@media (max-width: 1080px) and (orientation: landscape) and (max-height: 560px) {
+  .workspace { flex-direction: column; overflow-y: auto; }
+  .stage { flex: 0 0 auto; }
+  .player-wrap { aspect-ratio: 16 / 9; max-height: 52vh; }
+  .reader { flex: 1 1 auto; min-height: 0; max-height: none; }
+}
+
+/* 窄屏（不分握向）沿用原来的最小高度，避免老布局塌掉 */
+@media (max-width: 1080px) {
+  .brand-text span { display: none; }
+  .topbar-left { gap: 10px; }
+}
+
+/* 触屏平板（641–1080px）：顶栏按钮在这一档还带着文字标签，
+   竖握 810px 宽度装不下，被 flex-wrap 折成三行、占掉 113px 高度。
+   只留图标 —— 和 ≤640px 手机一致；.btn-lang 的 EN/中 标签必须保留，
+   它是这首屏上唯一能说明「界面在哪种语言」的东西。 */
+@media (max-width: 1080px) and (min-width: 641px) {
+  .topbar { padding: 6px 12px; row-gap: 4px; }
+  .topbar .btn > span:not(.pill) { display: none; }
+  .topbar .btn.btn-lang > span { display: inline; }
+  /* 开始识别是主行动，文字收窄保留而不是整个隐藏 */
+  .topbar #btnTranscribe > span { display: inline; font-size: 12px; }
+  .topbar #btnTranscribe { padding-left: 9px; padding-right: 11px; }
+  .topbar-sep { display: none; }
+}
+
 @media (max-width: 640px) {
   .topbar { padding: 8px 10px; }
   .btn > span:not(.pill) { display: none; }
@@ -617,6 +652,27 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; }
   .seg-mode button { padding: 4px 8px; font-size: 11.5px; }
   .workspace { padding: 8px; gap: 8px; }
   .drawer { width: 100%; }
+}
+
+/* 手机竖握（≤430px）：390px 宽度上 7 个图标按钮一排塞不下，
+   btnTheme 会被挤到第二行，顶栏从 61px 长到 165px。收窄内边距后一排刚好收起。 */
+@media (max-width: 430px) {
+  .topbar { padding: 6px 8px; gap: 4px; column-gap: 4px; }
+  .topbar-actions { gap: 3px; }
+  .topbar .btn { padding: 6px; min-height: 32px; gap: 3px; }
+  .topbar .btn-icon { padding: 6px; }
+  .topbar-sep { display: none; }
+  .workspace { padding: 6px; }
+}
+
+/* 极窄机（≤360px，如 iPhone SE 一代）：操作区 10 个按钮用 6px 内边距仍差几像素，
+   把「收藏」的文字收掉、只留计数药丸，一排刚好收起。 */
+@media (max-width: 360px) {
+  .topbar-actions { gap: 2px; }
+  .topbar .btn { padding: 5px 4px; }
+  .topbar .btn-icon { padding: 5px 4px; }
+  .topbar #btnFavs > span:not(.pill) { display: none; }
+  .topbar #btnFavs { padding: 5px 4px; }
 }
 
 body.dragover::after {
@@ -658,6 +714,9 @@ body.dragover::after {
   transition: opacity .16s ease;
 }
 .submask-chip.peek { opacity: .25; }
+/* 触屏没有 Alt 键，揭开原文靠点 chip 本身 —— 它必须能被点到。
+   其它情况下 chip 仍然不吃指针事件，不挡播放器的双击全屏。 */
+.submask-chip.tappable { pointer-events: auto; cursor: pointer; }
 
 /* 定位进行中的小转子 */
 .submask-chip .spin {

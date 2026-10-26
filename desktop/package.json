@@ -1,7 +1,7 @@
 {
   "name": "echolingo-desktop",
   "productName": "EchoLingo",
-  "version": "3.4.0",
+  "version": "3.13.7",
   "private": true,
   "description": "把 EchoLingo 站点打包成 macOS 应用（构建脚本本身零依赖）",
   "main": "main.js",

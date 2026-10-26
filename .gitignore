@@ -61,3 +61,10 @@ bench/shots/
 # 六个安装包合计 2.1GB，远超 Pages 单站 1GB / GitHub 单文件 100MB 的限制。
 # 它们走 GitHub Release 资产，页面上用 releases/latest/download/ 链接。
 download/files/
+
+# 扩展打包私钥不进仓库
+ext/key.pem
+ext/*.pem
+
+# Edge 加载解压扩展时自动生成的索引，不进仓库
+ext/_metadata/
