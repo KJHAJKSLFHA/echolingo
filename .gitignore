@@ -56,3 +56,8 @@ package-lock.json
 
 # 回归测试生成的截图（本地看，不进仓库）
 bench/shots/
+
+# ============================ 下载页的大文件 ============================
+# 六个安装包合计 2.1GB，远超 Pages 单站 1GB / GitHub 单文件 100MB 的限制。
+# 它们走 GitHub Release 资产，页面上用 releases/latest/download/ 链接。
+download/files/

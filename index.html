@@ -63,428 +63,226 @@ try {
 } catch (e) {}
 </script>
 <style>
-/* 全部自包含：不引外部字体/图片/脚本。
-   一是断网也能正常显示，二是避免任何跨域依赖。 */
-html:not([data-lang]) body { visibility: hidden; }   /* 语言没定好之前先别画 */
-/* ══ 主题令牌 ══════════════════════════════════════════════════
-   两套：深色（默认）与浅色。key 必须完全一致，门禁会比对。
-   三处状态分开记（缺一个就会出错）：
-   · localStorage['echolingo.site.theme'] = 用户选择 auto|light|dark
-   · html[data-theme-pref]                 = 用户选择，CSS 靠它决定显示哪颗图标
-   · html[data-theme]                      = **实际生效**的令牌集（auto 时由系统解析） */
-:root, :root[data-theme="dark"] {
-  /* 文字色。压在海水照片上，值是「扫」出来的：对整张 1280x720 照片 ×
-     压暗 alpha 逐像素取最坏对比度。实测最坏：正文 10.88、次级 7.29、
-     三级 5.69、链接 5.28 —— 全部 ≥4.5:1。
-     三级文字原来是最暗的 #737e92（在照片上只有 3.03:1），被提亮了：
-     压在照片上不能靠「调暗」分级，只能靠「调亮」。 */
-  --text: #f2f6fd; --text-2: #c3ccdb; --text-3: #aab5c6;
-  --brand: #6fb1ff; --brand-2: #1f6feb; --brand-soft: rgba(47,127,245,.14);
-  --ok: #3fbf82; --warn: #e5b355;
+/* 全部自包含：不引外部字体/图片/脚本。 */
+html:not([data-lang]) body { visibility: hidden; }
 
-  /* 兜底色：图片加载前 / 失败时*/
-  --bg-solid: #061420;
-  --sea-image: url('shots/sea-dark-1280.jpg');
-  /* 压暗层。照片成品图已经先 ×0.40 压过一轮，所以这层可以浅 ——
-     两层叠加比「只把一层压到 .9」保留更多纹理（实测 σ 21.9% vs 15.9%），
-     而且渐变连续、没有硬边。 */
-  --veil: linear-gradient(180deg,
-      rgba(4, 14, 24, .48) 0%,
-      rgba(4, 16, 28, .36) 22%,
-      rgba(5, 18, 31, .42) 55%,
-      rgba(3, 12, 22, .78) 100%);
-  --veil-glow: radial-gradient(120% 80% at 50% 0%, rgba(10, 90, 130, .18), transparent 60%);
-
-  /* 液态玻璃：半透明底 + 背景模糊 + 内侧高光边。
-     高光那条 inset 白边是「玻璃感」的关键，去掉就退化成普通半透明色块。 */
-  --glass-bg: rgba(16, 26, 38, .46);
-  --glass-bg-strong: rgba(14, 22, 33, .62);
-  --glass-bg-soft: rgba(255, 255, 255, .055);
-  --glass-edge: inset 0 1px 0 rgba(255,255,255,.30), inset 0 -1px 0 rgba(255,255,255,.06), inset 0 0 0 1px rgba(255,255,255,.10);
-  --glass-solid: rgba(12, 20, 30, .94);   /* 不支持 backdrop-filter 时的退化底色 */
-  --header-shine: inset 0 1px 0 rgba(255,255,255,.16);
-  --glass-shadow: 0 10px 30px rgba(2, 12, 22, .34);
-  --glass-line: rgba(255,255,255,.16);
-  --hairline: rgba(255,255,255,.10);   /* 分隔线 */
-  --code-bg: rgba(4, 10, 18, .72);
-  --code-line: rgba(255,255,255,.12);
-  --code-text: #cfe0f5;
-  --seg-active: rgba(255,255,255,.14);
-
-  /* 品牌渐变（logo 方块与主按钮共用），以及各种「浮起」阴影 */
-  --brand-grad: linear-gradient(160deg, #3d8bf8, #1a5fd0);
-  --btn-grad: linear-gradient(180deg, #3d8bf8, #1f6feb);
-  --btn-grad-hover: linear-gradient(180deg, #4a95ff, #2477f0);
-  --on-accent: #fff;
-  --btn-shine: inset 0 1px 0 rgba(255,255,255,.40);
-  --btn-glow: 0 8px 24px rgba(31,111,235,.42);
-  --btn-hover-bg: rgba(255,255,255,.12);
-  --btn-shadow: 0 6px 18px rgba(2,12,22,.30);
-  --shot-shadow: 0 24px 60px rgba(0,6,14,.50);
-  --card-shadow: 0 10px 30px rgba(2,12,22,.32);
-  --seg-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 1px 3px rgba(0,0,0,.18);
-  --warn-line: rgba(217,164,65,.42);
-  --warn-soft: rgba(217,164,65,.13);
-  --ok-line: rgba(46,163,106,.42);
-  --ok-soft: rgba(46,163,106,.13);
-
-  --radius: 14px; --maxw: 1180px;
-  --glass-blur: 22px; --glass-sat: 1.7;
+/* ══ 主题令牌（与 app/css/styles.css 同源）══════════════════════
+   颜色沿用重构前基线：浅色冷白灰、深色深灰蓝；蓝色只作强调。
+   版式/圆角/间距仍用 3.13.4 的新实现，不恢复海水照片或玻璃。 */
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #fbfbfd;
+  --line: #e3e6ec; --line-strong: #d2d7e0; --line-hover: #b9c1ce;
+  --text: #1b1f27; --text-2: #5a6473; --text-3: #8b93a3;
+  --brand: #1f6feb; --brand-hover: #1a60d0; --brand-soft: #eaf1fe; --brand-line: #c3d8fb;
+  --ok: #1a7f52; --warn: #b4741a;
+  --stage: #10141b; --mark: #fff2a8;
+  --radius: 10px; --maxw: 1120px;
+  --shadow: 0 1px 2px rgba(20,26,38,.06), 0 1px 3px rgba(20,26,38,.04);
+  --shadow-lg: 0 14px 40px rgba(20,26,38,.12), 0 2px 6px rgba(20,26,38,.06);
+  color-scheme: light;
 }
-
-/* ── 浅色主题 ────────────────────────────────────────────────────
-   浅色下水位图是「淡雅的浅蓝水痕」（照片先降饱和到 34%、再与近白混 70%），
-   文字是深色。对比度按 WCAG 算在**最亮的合成底**（rgb(251,253,254)）上，
-   因为浅色主题的最坏情况是深字压在最亮的底上。 */
-:root[data-theme="light"] {
-  --text: #1a1f28; --text-2: #414b59; --text-3: #5c6673;
-  --brand: #0d5cba; --brand-2: #0f5fbe; --brand-soft: rgba(13,92,186,.10);
-  --ok: #146c43; --warn: #8a5a10;
-
-  --bg-solid: #f4f8fb;
-  --sea-image: url('shots/sea-light-1280.jpg');
-  /* 浅色压暗层 = 白纱。比深色那层轻，因为底本身就亮。 */
-  --veil: linear-gradient(180deg,
-      rgba(255, 255, 255, .70) 0%,
-      rgba(255, 255, 255, .58) 22%,
-      rgba(255, 255, 255, .62) 55%,
-      rgba(248, 251, 254, .80) 100%);
-  --veil-glow: radial-gradient(120% 80% at 50% 0%, rgba(120, 190, 235, .22), transparent 60%);
-
-  --glass-bg: rgba(255, 255, 255, .58);
-  --glass-bg-strong: rgba(255, 255, 255, .76);
-  --glass-bg-soft: rgba(255, 255, 255, .50);
-  --glass-edge: inset 0 1px 0 rgba(255,255,255,.95), inset 0 -1px 0 rgba(90,110,140,.10), inset 0 0 0 1px rgba(255,255,255,.70);
-  --glass-solid: rgba(252, 253, 255, .96);
-  --header-shine: inset 0 1px 0 rgba(255,255,255,.85);
-  --glass-shadow: 0 10px 30px rgba(30, 60, 100, .13);
-  --glass-line: rgba(120, 145, 175, .30);
-  --hairline: rgba(90, 115, 145, .22);
-  --code-bg: rgba(255, 255, 255, .80);
-  --code-line: rgba(120, 145, 175, .32);
-  --code-text: #24303f;
-  --seg-active: rgba(255,255,255,.92);
-
-  /* 同名令牌的浅色版本：主按钮仍用品牌蓝（白字对比 6.18:1），
-     但阴影和渐变要浅，否则浅底上像贴了一块深色胶带。 */
-  --brand-grad: linear-gradient(160deg, #2f7ff5, #155cc8);
-  --btn-grad: linear-gradient(180deg, #2f7ff5, #155cc8);
-  --btn-grad-hover: linear-gradient(180deg, #4a92ff, #1a63d8);
-  --on-accent: #fff;
-  --btn-shine: inset 0 1px 0 rgba(255,255,255,.45);
-  --btn-glow: 0 8px 24px rgba(21,92,200,.30);
-  --btn-hover-bg: rgba(255,255,255,.72);
-  --btn-shadow: 0 6px 18px rgba(30,60,100,.16);
-  --shot-shadow: 0 24px 60px rgba(30,60,100,.20);
-  --card-shadow: 0 10px 30px rgba(30,60,100,.14);
-  --seg-shadow: inset 0 1px 0 rgba(255,255,255,.95), 0 1px 3px rgba(30,60,100,.16);
-  --warn-line: rgba(138,90,16,.38);
-  --warn-soft: rgba(138,90,16,.11);
-  --ok-line: rgba(20,108,67,.38);
-  --ok-soft: rgba(20,108,67,.11);
-
-  --glass-blur: 20px; --glass-sat: 1.3;
+:root[data-theme="dark"] {
+  --bg: #0e1116; --panel: #161a21; --panel-2: #1b2029;
+  --line: #262c36; --line-strong: #333a46; --line-hover: #454e5d;
+  --text: #e6e9ef; --text-2: #a7b0be; --text-3: #77808f;
+  --brand: #4c8dff; --brand-hover: #6aa0ff; --brand-soft: #1b2740; --brand-line: #2c4372;
+  --ok: #3fbe83; --warn: #e0a44a;
+  --stage: #080a0e; --mark: #5c4f16;
+  --shadow: 0 1px 2px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.35);
+  --shadow-lg: 0 10px 32px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.4);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
-  margin: 0; background: var(--bg-solid); color: var(--text);
+  margin: 0; background: var(--bg); color: var(--text);
   font: 16px/1.7 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
         "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-
-/* ── 海水背景层 ────────────────────────────────────────────────
-   两层固定定位的装饰层：.sea-bg（照片 + Ken Burns 缓慢缩放平移）
-   + .sea-veil（渐变压暗 / 白纱）。都是纯装饰，对读屏器隐藏。
-   为什么用 div 而不是 body 背景图：
-   ① 要 Ken Burns 就得对图片本身做 transform，body 背景做不到位；
-   ② 压暗层要压在照片之上、内容之下，必须是独立一层。
-
-   ⚠ 这里没有「局部 scrim」色块了。上一版在 hero / 章节标题下垫了一块
-   radial 半透明黑，实测在英雄区形成一条 1144px 宽、边缘亮度跳变 16 级的
-   硬边暗块，看起来像贴了一张脏卡片（用户原话：「黑色的影子特别奇怪」）。
-   现在改成把对比度做进「照片本身先压暗 + 连续渐变的压暗层」，没有硬边。 */
-.sea-bg {
-  position: fixed; inset: 0; z-index: -2;
-  overflow: hidden; pointer-events: none;
-  background: var(--bg-solid);
-}
-.sea-bg::before {
-  content: ''; position: absolute; inset: -6%;
-  background-image: var(--sea-image);
-  background-size: cover; background-position: center 38%;
-  /* 浅色主题下照片要更淡一点，避免水痕压过文字 */
-  opacity: 1;
-  will-change: transform;
-  animation: kenburns 48s ease-in-out infinite alternate;
-}
-@media (min-width: 1500px) {
-  .sea-bg::before { background-image: var(--sea-image-1920, var(--sea-image)); }
-}
-@media (max-width: 820px) {
-  .sea-bg::before { background-image: var(--sea-image-800, var(--sea-image)); }
-}
-/* Ken Burns：极缓慢推近 + 轻微侧移，48 秒一个来回，幅度压在 6% 以内 ——
-   再大就会「看得出在动」，反而分心。 */
-@keyframes kenburns {
-  from { transform: scale(1.00) translate3d(0, 0, 0); }
-  to   { transform: scale(1.06) translate3d(-1.4%, -2.0%, 0); }
-}
-/* 压暗层：颜色取自海水本身的深蓝（不是纯黑），压暗后仍是「海水」而不是「灰幕」。
-   浅色主题下这一层变成白纱（令牌里换了颜色）。 */
-.sea-veil {
-  position: fixed; inset: 0; z-index: -1; pointer-events: none;
-  background: var(--veil), var(--veil-glow);
-}
-
-/* 三档图片尺寸靠媒体查询切换（800 / 1280 / 1920），窄屏不下载大图。
-   用自定义属性承接，这样主题切换时浅色/深色各取自己那一套。 */
-@media (min-width: 1500px) {
-  :root, :root[data-theme="dark"] {
-    --sea-image-1920: url('shots/sea-dark-1920.jpg');
-    --sea-image: url('shots/sea-dark-1920.jpg');
-  }
-  :root[data-theme="light"] {
-    --sea-image-1920: url('shots/sea-light-1920.jpg');
-    --sea-image: url('shots/sea-light-1920.jpg');
-  }
-}
-@media (max-width: 820px) {
-  :root, :root[data-theme="dark"] {
-    --sea-image-800: url('shots/sea-dark-800.jpg');
-    --sea-image: url('shots/sea-dark-800.jpg');
-  }
-  :root[data-theme="light"] {
-    --sea-image-800: url('shots/sea-light-800.jpg');
-    --sea-image: url('shots/sea-light-800.jpg');
-  }
-}
-
 a { color: var(--brand); text-decoration: none; }
-a:hover { text-decoration: underline; }
-.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; min-width: 0; }
-
-/* 玻璃基类：所有面板/按钮共用同一套材质，避免各写各的导致不一致 */
-.glass {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  border: 1px solid var(--glass-line);
-  box-shadow: var(--glass-edge), var(--glass-shadow);
-}
-/* 不支持 backdrop-filter 的浏览器（老 Firefox / 关掉了硬件加速）：
-   退化成不透明的深色面板，至少保证文字可读，不能变成一层糊。 */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .glass, header, .card, .shot, .btn, .badge, .lang-seg {
-    background: var(--glass-solid);
-  }
-}
-/* 用户要求减少动效时，背景静止 —— 这是无障碍硬要求，不是可选项 */
-@media (prefers-reduced-motion: reduce) {
-  .sea-bg::before { animation: none; }
-  html { scroll-behavior: auto; }
-}
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 28px; min-width: 0; }
 
 header {
   position: sticky; top: 0; z-index: 50;
-  backdrop-filter: blur(18px) saturate(1.8);
-  -webkit-backdrop-filter: blur(18px) saturate(1.8);
-  background: var(--glass-bg-strong);
-  border-bottom: 1px solid var(--glass-line);
-  box-shadow: var(--header-shine);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
-.nav { display: flex; align-items: center; gap: 14px; height: 62px; min-width: 0; }
-.logo { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .2px; min-width: 0; flex: 0 1 auto; }
+@supports not (background: color-mix(in srgb, red 50%, blue)) { header { background: var(--bg); } }
+.nav { display: flex; align-items: center; gap: 16px; height: 58px; min-width: 0; }
+.logo { display: flex; align-items: center; gap: 9px; font-weight: 650; letter-spacing: .1px; min-width: 0; flex: 0 1 auto; font-size: 15px; }
 .logo .mark {
-  width: 30px; height: 30px; border-radius: 8px; flex: 0 0 auto;
-  background: var(--brand-grad);
-  display: grid; place-items: center; color: var(--on-accent); font-size: 13px; font-weight: 800;
+  width: 27px; height: 27px; border-radius: 7px; flex: 0 0 auto;
+  background: var(--panel-2); border: 1px solid var(--line-strong);
+  display: grid; place-items: center; color: var(--text-2); font-size: 11.5px; font-weight: 700;
 }
-.logo .sub { font-size: 12px; color: var(--text-3); font-weight: 400; margin-left: 3px; }
-.nav-links { margin-left: auto; display: flex; align-items: center; gap: 20px; font-size: 14px; min-width: 0; }
+.logo .sub { font-size: 11.5px; color: var(--text-3); font-weight: 400; margin-left: 2px; }
+.nav-links { margin-left: auto; display: flex; align-items: center; gap: 18px; font-size: 13.5px; min-width: 0; }
 .nav-links a { color: var(--text-2); }
 .nav-links a:hover { color: var(--text); text-decoration: none; }
 
 .lang-seg {
-  display: inline-flex; border-radius: 9px; padding: 2px; gap: 2px;
-  background: var(--glass-bg); border: 1px solid var(--glass-line);
-  backdrop-filter: blur(14px) saturate(1.6);
-  -webkit-backdrop-filter: blur(14px) saturate(1.6);
-  box-shadow: var(--glass-edge);
+  display: inline-flex; border-radius: 7px; padding: 2px; gap: 1px;
+  background: var(--panel-2); border: 1px solid var(--line);
 }
 .lang-seg button {
-  border: 0; background: transparent; padding: 5px 11px; border-radius: 6px;
-  cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--text-3);
-  font-family: inherit;
+  border: 0; background: transparent; padding: 4px 9px; border-radius: 5px;
+  cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text-3);
+  font-family: inherit; min-height: 30px;
 }
-.lang-seg button.active {
-  background: var(--seg-active); color: var(--text);
-  box-shadow: var(--seg-shadow);
+@media (pointer: coarse) {
+  .lang-seg button { min-height: 40px; padding: 8px 10px; }
+  .iconbtn { width: 40px; height: 40px; }
+  .nav-links > .btn, .btn { min-height: 44px; }
 }
+.lang-seg button:hover { color: var(--text); }
+.lang-seg button.active { background: var(--panel); color: var(--text); box-shadow: var(--shadow); }
 
-/* 玻璃按钮：半透明底 + 背景模糊 + 上沿高光。
-   hover 提亮一档而不是换成实色，保持「玻璃被光照到」的连续感。 */
-/* 外观按钮：玻璃小方块，里面三颗图标按 data-theme-pref 只显示一颗。
-   显示规则写在下面，切主题时不需要 JS 去改 DOM。 */
 .iconbtn {
-  display: inline-grid; place-items: center; width: 32px; height: 32px;
-  padding: 0; border-radius: 9px; cursor: pointer;
-  border: 1px solid var(--glass-line);
-  background: var(--glass-bg-soft); color: var(--text-2);
-  backdrop-filter: blur(14px) saturate(1.6);
-  -webkit-backdrop-filter: blur(14px) saturate(1.6);
-  box-shadow: var(--glass-edge);
+  display: inline-grid; place-items: center; width: 30px; height: 30px;
+  padding: 0; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--panel); color: var(--text-2);
 }
-.iconbtn:hover { background: var(--glass-bg); color: var(--text); }
-.iconbtn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; display: none; }
+.iconbtn:hover { border-color: var(--line-hover); color: var(--text); }
+.iconbtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; display: none; }
 :root[data-theme-pref="auto"]  #btnTheme .i-auto,
 :root[data-theme-pref="light"] #btnTheme .i-sun,
 :root[data-theme-pref="dark"]  #btnTheme .i-moon { display: block; }
 
 .btn {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 9px 16px; border-radius: 10px;
-  border: 1px solid var(--glass-line);
-  background: var(--glass-bg-soft);
-  backdrop-filter: blur(16px) saturate(1.7);
-  -webkit-backdrop-filter: blur(16px) saturate(1.7);
-  box-shadow: var(--glass-edge), var(--btn-shadow);
-  color: var(--text); font-size: 14px; font-weight: 500;
-  cursor: pointer; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 8px;
+  border: 1px solid var(--line-strong); background: var(--panel);
+  color: var(--text); font-size: 13.5px; font-weight: 500;
+  cursor: pointer; white-space: nowrap; min-height: 36px;
 }
-.btn:hover { background: var(--btn-hover-bg); text-decoration: none; }
-.btn:active { transform: translateY(1px); }
-.btn-primary {
-  background: var(--btn-grad);
-  border-color: var(--glass-line); color: var(--on-accent);
-  box-shadow: var(--btn-shine), var(--btn-glow);
-}
-.btn-primary:hover { background: var(--btn-grad-hover); }
-.btn-lg { padding: 12px 22px; font-size: 15px; border-radius: 11px; }
+.btn:hover { background: var(--panel-2); border-color: var(--line-hover); text-decoration: none; }
+.btn-primary { border-color: var(--text-2); font-weight: 600; }
+.btn-primary:hover { border-color: var(--text); }
+.btn-lg { padding: 11px 20px; font-size: 14.5px; min-height: 44px; }
 
-.hero { padding: 74px 0 54px; text-align: center; }
+.hero { padding-top: 68px; padding-bottom: 22px; text-align: center; }
 .badge {
-  display: inline-flex; align-items: center; gap: 7px; margin-bottom: 20px;
-  padding: 5px 13px; border-radius: 999px; font-size: 13px;
-  border: 1px solid var(--glass-line); background: var(--glass-bg-soft); color: var(--text-2);
-  backdrop-filter: blur(14px) saturate(1.6);
-  -webkit-backdrop-filter: blur(14px) saturate(1.6);
-  box-shadow: var(--glass-edge);
+  display: inline-flex; align-items: center; gap: 7px; margin-bottom: 18px;
+  padding: 4px 11px; border-radius: 999px; font-size: 12px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--text-2);
 }
-.badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
-h1 { margin: 0 0 18px; font-size: clamp(30px, 5vw, 50px); line-height: 1.22; letter-spacing: -.5px; font-weight: 800; }
+.badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+h1 { margin: 0 0 16px; font-size: clamp(30px, 4.6vw, 46px); line-height: 1.2; letter-spacing: -.8px; font-weight: 750; }
 h1 .hl { color: var(--brand); }
-.lede { margin: 0 auto 30px; max-width: 690px; font-size: clamp(15px, 2vw, 17.5px); color: var(--text-2); }
-.cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 14px; }
-.cta-note { font-size: 13px; color: var(--text-3); max-width: 640px; margin: 0 auto; }
+.lede { margin: 0 auto 26px; max-width: 660px; font-size: clamp(15px, 1.8vw, 17px); color: var(--text-2); line-height: 1.75; }
+.cta { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 12px; }
+.cta-note { font-size: 12.5px; color: var(--text-3); max-width: 620px; margin: 0 auto; }
 
-.shot {
-  margin: 44px auto 0; max-width: 1040px; border-radius: var(--radius);
-  border: 1px solid var(--glass-line); overflow: hidden;
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  box-shadow: var(--glass-edge), var(--shot-shadow);
+/* 主展示图：真实 App 界面两套主题并排 */
+.showcase { max-width: 1040px; margin: 34px auto 0; }
+.shot-frame {
+  border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+  background: var(--panel); box-shadow: var(--shadow-lg);
 }
-.shot img { display: block; width: 100%; height: auto; }
-.shot figcaption { padding: 11px 16px; font-size: 13px; color: var(--text-3); border-top: 1px solid var(--glass-line); text-align: left; }
+.shot-frame img { display: block; width: 100%; height: auto; }
+.shot-cap { padding: 9px 14px; font-size: 12px; color: var(--text-3); border-top: 1px solid var(--line); text-align: left; }
+.theme-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.usecase { display: grid; grid-template-columns: 1.15fr .85fr; gap: 28px; align-items: center; padding: 26px 0; border-top: 1px solid var(--line); }
+.usecase:first-of-type { border-top: 0; padding-top: 10px; }
+.usecase.rev { grid-template-columns: .85fr 1.15fr; }
+.usecase.rev .uc-media { order: 2; }
+.uc-media img { width: 100%; display: block; }
+.uc-step { font: 600 11px/1 var(--mono, ui-monospace, Menlo, monospace); color: var(--text-3); letter-spacing: .8px; text-transform: uppercase; }
+.uc-copy h3 { margin: 8px 0 8px; font-size: 21px; line-height: 1.35; font-weight: 650; letter-spacing: -.2px; }
+.uc-copy p { margin: 0; color: var(--text-2); font-size: 14px; line-height: 1.75; }
+.uc-list { margin: 12px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--text-2); }
+.uc-list li { position: relative; padding-left: 14px; margin-bottom: 5px; }
+.uc-list li::before { content: ''; position: absolute; left: 0; top: .62em; width: 4px; height: 4px; border-radius: 50%; background: var(--brand); }
 
-section { padding: 66px 0; min-width: 0; }
-section + section { border-top: 1px solid var(--hairline); }
-.sec-head { max-width: 720px; margin-bottom: 38px; }
-.sec-head h2 { margin: 0 0 10px; font-size: clamp(22px, 3.4vw, 30px); font-weight: 750; letter-spacing: -.3px; }
-.sec-head p { margin: 0; color: var(--text-2); font-size: 15.5px; }
+section { padding: 58px 0; min-width: 0; }
+section + section { border-top: 1px solid var(--line); }
+.sec-head { max-width: 680px; margin-bottom: 30px; }
+.sec-head h2 { margin: 0 0 8px; font-size: clamp(21px, 3vw, 28px); font-weight: 700; letter-spacing: -.3px; }
+.sec-head p { margin: 0; color: var(--text-2); font-size: 15px; }
 
-.grid { display: grid; gap: 16px; }
-.grid-3 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
-.grid-2 { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
-
-/* 卡片也做成玻璃。注意 .card 里没有任何嵌套玻璃 —— 玻璃叠玻璃
-   会让 backdrop-filter 互相采样，在部分浏览器上发灰、发脏。 */
-.card {
-  padding: 22px; border-radius: var(--radius);
-  background: var(--glass-bg); border: 1px solid var(--glass-line);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  box-shadow: var(--glass-edge), var(--card-shadow);
-}
-.card h3 { margin: 0 0 9px; font-size: 16.5px; font-weight: 650; }
-.card p { margin: 0; color: var(--text-2); font-size: 14.5px; }
-.card .ico { width: 34px; height: 34px; border-radius: 9px; margin-bottom: 13px; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; font-size: 17px; }
-.card.problem { border-color: var(--warn-line); }
-.card.problem .ico { background: var(--warn-soft); color: var(--warn); }
-.card.solve { border-color: var(--ok-line); }
-.card.solve .ico { background: var(--ok-soft); color: var(--ok); }
+/* 少量、成组的说明条目，不再是一墙重复卡片 */
+.facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid var(--line); }
+.fact { padding: 20px 22px 4px 0; }
+.fact + .fact { padding-left: 22px; border-left: 1px solid var(--line); }
+.fact h3 { margin: 0 0 6px; font-size: 15px; font-weight: 650; }
+.fact p { margin: 0; color: var(--text-2); font-size: 13.5px; line-height: 1.7; }
 
 kbd {
-  display: inline-block; min-width: 20px; padding: 2px 7px; margin: 0 1px;
-  border-radius: 6px; border: 1px solid var(--glass-line); border-bottom-width: 2px;
-  background: var(--glass-bg-soft); font: 600 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  display: inline-block; min-width: 20px; padding: 2px 6px; margin: 0 1px;
+  border-radius: 5px; border: 1px solid var(--line-strong); border-bottom-width: 2px;
+  background: var(--panel-2); font: 600 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--text);
 }
-table.kv { width: 100%; border-collapse: collapse; font-size: 14.5px; }
-table.kv td { padding: 9px 0; border-bottom: 1px solid var(--hairline); color: var(--text-2); }
-table.kv td:first-child { width: 190px; color: var(--text); }
+table.kv { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.kv td { padding: 8px 0; border-bottom: 1px solid var(--line); color: var(--text-2); }
+table.kv td:first-child { width: 170px; color: var(--text); }
 table.kv tr:last-child td { border-bottom: 0; }
 
-/* 代码块用比页面更实的深色（不是玻璃）：代码要长时间盯着看，
-   背景里透出海水波纹反而伤眼。这里刻意不做玻璃。 */
-/* 代码块横向滚动。max-width:100% + min-width:0 是必须的：
-   <pre> 默认会按内容宽度撑开自己，里面那行 160 字符的构建说明会把
-   整页撑出横向滚动条（实测 360px 视口下 scrollWidth 比 clientWidth
-   大 14px）。加上这两个属性后，超长行在 pre 内部滚动，不影响页面。 */
 pre {
-  margin: 0 0 14px; padding: 15px 17px; border-radius: 11px; overflow-x: auto;
+  margin: 0 0 12px; padding: 14px 16px; border-radius: 8px; overflow-x: auto;
   max-width: 100%; min-width: 0;
-  background: var(--code-bg); border: 1px solid var(--code-line);
-  font: 13px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--code-text);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  background: var(--panel-2); border: 1px solid var(--line);
+  font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text);
 }
-pre .c { color: var(--text-3); white-space: pre; }   /* 注释不折行，交给 pre 自己滚 */
+pre .c { color: var(--text-3); white-space: pre; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }
-p code, li code { background: var(--glass-bg-soft); padding: 1.5px 6px; border-radius: 5px; border: 1px solid var(--code-line); }
-ul.plain { margin: 0; padding-left: 20px; color: var(--text-2); font-size: 14.5px; }
-ul.plain li { margin-bottom: 7px; }
+p code, li code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line); }
+ul.plain { margin: 0; padding-left: 19px; color: var(--text-2); font-size: 14px; }
+ul.plain li { margin-bottom: 5px; }
 
-footer { padding: 40px 0 56px; border-top: 1px solid var(--hairline); color: var(--text-3); font-size: 13.5px; }
-footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: center; }
+footer { padding: 36px 0 52px; border-top: 1px solid var(--line); color: var(--text-3); font-size: 13px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; }
+
+/* 克制动效：只让主图轻微上浮一次，且尊重 reduced-motion */
+@media (prefers-reduced-motion: no-preference) {
+  .showcase { animation: rise .5s ease both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .showcase { animation: none; }
+}
 
 @media (max-width: 860px) {
   .nav-links a:not(.btn) { display: none; }
-  .hero { padding: 46px 0 36px; }
-  section { padding: 48px 0; }
-  table.kv td:first-child { width: 130px; }
+  .hero { padding-top: 46px; padding-bottom: 18px; }
+  section { padding: 44px 0; }
+  .usecase, .usecase.rev { grid-template-columns: 1fr; gap: 16px; padding: 22px 0; }
+  .usecase.rev .uc-media { order: 0; }
+  .facts { grid-template-columns: 1fr; }
+  .fact { padding: 16px 0; }
+  .fact + .fact { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); }
+  table.kv td:first-child { width: 120px; }
 }
-
-/* 窄屏：三语切换多了一个按钮，380px 附近会把导航挤出横向滚动条。
-   收窄内边距、缩小字号，并在极窄时让 logo 副标题先让位。 */
-@media (max-width: 520px) {
+@media (max-width: 620px) {
   .wrap { padding: 0 16px; }
-  .nav { gap: 8px; }
-  /* 语言段和主题键之间不需要 20px 那么宽 */
+  .nav { gap: 8px; height: 54px; }
   .nav-links { gap: 8px; }
-  .lang-seg button { padding: 5px 7px; font-size: 12px; }
-  /* CTA 收成只有箭头 —— 390px 下 logo + 中文/EN/ES + 主题 + 「打开工具 →」
-     一行放不下，会撑出 19px 横向滚动条。窄屏只留箭头，靠 aria-label 保可读性。 */
+  .logo .sub { display: none; }
+  .lang-seg button { padding: 4px 7px; font-size: 11.5px; }
   .nav-links > .btn .txt { display: none; }
   .nav-links > .btn { padding: 8px 11px; }
+  .theme-pair { grid-template-columns: 1fr; }
+  .hero { padding-top: 36px; padding-bottom: 12px; }
+  .cta .btn-lg { flex: 1 1 auto; justify-content: center; }
 }
 @media (max-width: 400px) {
-  .logo .sub { display: none; }
-  .logo { font-size: 15px; }
-  .lang-seg button { padding: 5px 7px; font-size: 11.5px; }
-  .nav .btn { padding: 8px 12px; font-size: 13px; }
+  .lang-seg button { padding: 4px 6px; font-size: 11px; }
+  h1 { font-size: 28px; }
 }
+
+  .cta-pay { margin: 10px 0 0; display: flex; gap: 8px; align-items: baseline; justify-content: center; flex-wrap: wrap;
+             font-size: 13.5px; color: var(--text-2); }
+  .cta-pay .pay-price { font-size: 17px; font-weight: 700; color: var(--text); }
+  .cta-pay a { color: var(--brand); text-decoration: none; }
+  .cta-pay a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
-
-<!-- 海水背景：照片层（Ken Burns 缓慢缩放平移）+ 压暗层。
-     放在最前面、z-index 为负，纯装饰，对读屏器隐藏。 -->
-<div class="sea-bg" aria-hidden="true"></div>
-<div class="sea-veil" aria-hidden="true"></div>
 
 <header>
   <div class="wrap nav">
@@ -493,10 +291,11 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: cent
       <span>EchoLingo<span class="sub" data-i18n="logo.sub">回声语言</span></span>
     </div>
     <nav class="nav-links">
-      <a href="#features" data-i18n="nav.features">功能</a>
-      <a href="#screens" data-i18n="nav.screens">截图</a>
-      <a href="#offline" data-i18n="nav.offline">离线</a>
-      <a href="#mac" data-i18n="nav.mac">macOS 版</a>
+      <a href="#how" data-i18n="nav.how">怎么用</a>
+      <a href="#facts" data-i18n="nav.facts">边界</a>
+      <a href="#keys" data-i18n="nav.keys">快捷键</a>
+      <a href="download/" data-i18n="nav.download">下载</a>
+      <a href="download/helper/" data-i18n="nav.get">取流助手</a>
       <span class="lang-seg" id="langSeg">
         <button type="button" data-lang-btn="zh">中文</button>
         <button type="button" data-lang-btn="en">EN</button>
@@ -516,87 +315,119 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: cent
 
 <div class="hero wrap">
   <div class="badge"><span class="dot"></span><span data-i18n="hero.badge">识别与翻译 100% 在本机完成 · 断网可用</span></div>
-  <h1 data-i18n-html="hero.h1">看英语或西语视频，<span class="hl">不用再盯着字幕</span></h1>
+  <h1 data-i18n-html="hero.h1">看英语或西语视频，<span class="hl">逐句听懂，而不是逐字读</span></h1>
   <p class="lede" data-i18n-html="hero.lede">
-    导入一段英语或西班牙语视频，自动识别每一句话，右侧原文与中文对照、播放到哪个词哪个词就变浅绿；
-    点任意单词查释义与发音，整句可朗读可收藏。识别与翻译都在你自己的浏览器里跑，<strong>视频不出本机</strong>。
+    导入一段视频，自动得到原文与中文对照；播放到哪一句，右侧就停在哪一句。
+    点任意单词看释义与发音，画面里烧录的字幕可以就地模糊掉。
+    <strong>识别与翻译都在本机完成，视频不出你的电脑。</strong>
   </p>
   <div class="cta">
-    <a class="btn btn-primary btn-lg" href="app/"><span data-i18n="hero.cta1">开始使用</span> →</a>
-    <a class="btn btn-lg" href="#features" data-i18n="hero.cta2">看看有什么功能</a>
+    <a class="btn btn-primary btn-lg" href="app/"><span data-i18n="hero.cta1">打开工具</span> →</a>
+    <a class="btn btn-lg" href="#how" data-i18n="hero.cta2">看它怎么工作</a>
   </div>
-  <p class="cta-note" data-i18n="hero.note">首次打开需下载识别与翻译模型（约 200 MB，只此一次），之后由浏览器缓存，拔网线也能继续用。</p>
+  <p class="cta-note" data-i18n="hero.note">首次打开需下载识别与翻译模型（约 200 MB，只此一次），之后由浏览器缓存，断网也能继续用。</p>
+  <p class="cta-pay">
+    <span class="pay-price">¥9.9</span>
+    <span data-i18n="hero.pay">一次性买断 · 永久使用，一个激活码换电脑也能用</span>
+    <a href="download/" data-i18n="hero.payLink">领取激活码</a>
+  </p>
 
-  <figure class="shot">
-    <img src="shots/preview-1-compare.png" alt="On-screen subtitle mask: off on the left, blurred in place on the right" loading="lazy">
-    <figcaption data-i18n-html="hero.cap">画面里烧录的英文字幕，可以就地模糊掉 —— 逼自己先听，按住 <kbd>Alt</kbd> 临时看原文。</figcaption>
-  </figure>
+  <div class="showcase">
+    <div class="theme-pair">
+      <figure class="shot-frame" style="margin:0">
+        <img src="shots/site/app-light.png" alt="EchoLingo light theme: video on the left, bilingual subtitles and a word card on the right" loading="eager" width="1440" height="900">
+        <figcaption class="shot-cap" data-i18n="hero.capLight">浅色：冷白工作面，蓝色强调只落在当前句。</figcaption>
+      </figure>
+      <figure class="shot-frame" style="margin:0">
+        <img src="shots/site/app-dark.png" alt="EchoLingo dark theme: dark grey-blue interface with the same layout" loading="eager" width="1440" height="900">
+        <figcaption class="shot-cap" data-i18n="hero.capDark">深色：深灰蓝底，长时间阅读不刺眼。</figcaption>
+      </figure>
+    </div>
+  </div>
 </div>
 
-<section id="features">
+<section id="how">
   <div class="wrap">
     <div class="sec-head">
-      <h2 data-i18n="feat.title">它解决的三个具体问题</h2>
-      <p data-i18n="feat.sub">不是又一个「播放器 + 字幕」，针对的是精读外语视频时真正卡住的地方。目前支持英语与西班牙语，界面有中文 / English / Español 三套。</p>
+      <h2 data-i18n="how.title">三步，都在同一个界面里</h2>
+      <p data-i18n="how.sub">没有弹窗接力，也没有「导出再导入」。下面是同一份界面的实际截图。</p>
     </div>
-    <div class="grid grid-3">
-      <div class="card problem">
-        <div class="ico">👁</div>
-        <h3 data-i18n="f1t">画面字幕让你在阅读，不是听力</h3>
-        <p data-i18n="f1b">很多学习视频把英文字幕直接烧进了画面。眼睛盯着它，其实是在做阅读理解 —— 听力一点没练到。</p>
+
+    <div class="usecase">
+      <figure class="uc-media" style="margin:0">
+        <div class="shot-frame">
+          <img src="shots/site/app-light.png" alt="Importing a video and reading the generated bilingual subtitles" loading="lazy" width="1440" height="900">
+          <figcaption class="shot-cap" data-i18n="how.c1cap">左侧视频与播放条，右侧逐句原文 / 译文。</figcaption>
+        </div>
+      </figure>
+      <div class="uc-copy">
+        <div class="uc-step" data-i18n="how.s1">01 · 导入与识别</div>
+        <h3 data-i18n="how.c1t">拖进来，字幕自己长出来</h3>
+        <p data-i18n="how.c1b">支持 mp4 / mov / mkv / webm，也支持 mp3 / m4a / wav。识别过程显示真实阶段与进度，随时可以取消；失败会明确告诉你哪一步失败，并能就地重试。</p>
+        <ul class="uc-list">
+          <li data-i18n="how.c1l1">原文最强、译文次级，第三语言可折叠</li>
+          <li data-i18n="how.c1l2">可以只导入 srt / vtt，跳过识别</li>
+        </ul>
       </div>
-      <div class="card solve">
-        <div class="ico">✓</div>
-        <h3 data-i18n="f2t">烧录字幕就地模糊</h3>
-        <p data-i18n="f2b">只模糊画面底部那一条，人物、手势、上方的大字都不动。自动定位字幕位置，也可手动拖边界。</p>
+    </div>
+
+    <div class="usecase rev">
+      <figure class="uc-media" style="margin:0">
+        <div class="shot-frame">
+          <img src="shots/site/wordcard-light.png" alt="A word card showing pronunciation, dictionary senses and the current sentence" loading="lazy" width="1440" height="900">
+          <figcaption class="shot-cap" data-i18n="how.c2cap">词卡：音标、义项、当前句上下文、收藏。</figcaption>
+        </div>
+      </figure>
+      <div class="uc-copy">
+        <div class="uc-step" data-i18n="how.s2">02 · 逐词</div>
+        <h3 data-i18n="how.c2t">点一个词，先听发音，再看释义</h3>
+        <p data-i18n="how.c2b">词卡显示音标、词典义项与它所在的那一句。没有可靠的上下文义项时不会编造，只标注「当前句」并把已有译文原样放在旁边。</p>
+        <ul class="uc-list">
+          <li data-i18n="how.c2l1">可选「查词时自动暂停」，关闭后只在原本播放时续播</li>
+          <li data-i18n="how.c2l2">收藏进入生词本，交给间隔复习</li>
+        </ul>
       </div>
-      <div class="card problem">
-        <div class="ico">👁</div>
-        <h3 data-i18n="f3t">右侧译文也在剧透</h3>
-        <p data-i18n="f3b">就算画面字幕糊了，眼睛还是会往右边的英文原文瞟。</p>
-      </div>
-      <div class="card solve">
-        <div class="ico">✓</div>
-        <h3 data-i18n="f4t">中英可分别收起</h3>
-        <p data-i18n-html="f4b">英文、中文两个开关独立控制（<kbd>E</kbd> / <kbd>C</kbd>）。整个字幕面板也能收成一条把手（<kbd>H</kbd>），视频直接占满屏。</p>
-      </div>
-      <div class="card problem">
-        <div class="ico">👁</div>
-        <h3 data-i18n="f5t">云端识别意味着上传视频</h3>
-        <p data-i18n="f5b">大多数同类工具要把你的视频传到服务器上跑，慢、要排队，而且内容不再只属于你。</p>
-      </div>
-      <div class="card solve">
-        <div class="ico">✓</div>
-        <h3 data-i18n="f6t">识别翻译全在本机</h3>
-        <p data-i18n="f6b">whisper + opus-mt 的量化模型跑在浏览器里，用 WebAssembly 多线程。视频从不离开你的电脑。</p>
+    </div>
+
+    <div class="usecase">
+      <figure class="uc-media" style="margin:0">
+        <div class="shot-frame">
+          <img src="shots/mask-adjust.png" alt="The burned-in subtitle mask being positioned over a video" loading="lazy">
+          <figcaption class="shot-cap" data-i18n="how.c3cap">画面烧录字幕可就地模糊，位置可自动检测或手动调整。</figcaption>
+        </div>
+      </figure>
+      <div class="uc-copy">
+        <div class="uc-step" data-i18n="how.s3">03 · 练听力</div>
+        <h3 data-i18n="how.c3t">把「看得懂」换成「听得清」</h3>
+        <p data-i18n="how.c3b">遮住画面里烧录的字幕，右侧也能逐列收起。播放条只留播放、上一句 / 下一句、重播、循环和速度；遮罩样式与强度收进设置，不占播放空间。</p>
+        <ul class="uc-list">
+          <li data-i18n="how.c3l1">按住 Alt 临时揭开原文</li>
+          <li data-i18n="how.c3l2">键盘：空格、← →、R、L、E、C、H</li>
+        </ul>
       </div>
     </div>
   </div>
 </section>
 
-<section id="screens">
+<section id="facts">
   <div class="wrap">
     <div class="sec-head">
-      <h2 data-i18n="scr.title">界面</h2>
-      <p data-i18n="scr.sub">深色 / 浅色两套配色，界面中英双语可切。下面是实拍，不是效果图。</p>
+      <h2 data-i18n="facts.title">它是什么，不是什么</h2>
+      <p data-i18n="facts.sub">边界说清楚，比一句「全离线」更有用。</p>
     </div>
-    <div class="grid grid-2">
-      <figure class="shot" style="margin:0">
-        <img src="shots/lang-preview.png" alt="English and Chinese columns collapsed independently" loading="lazy">
-        <figcaption data-i18n-html="scr.c1"><strong>中英独立收起</strong>：默认都显示；关掉英文只留中文练听力；也可以两个都关，只剩时间码。</figcaption>
-      </figure>
-      <figure class="shot" style="margin:0">
-        <img src="shots/collapse-preview.png" alt="Collapsing the subtitle panel" loading="lazy">
-        <figcaption data-i18n-html="scr.c2"><strong>面板收起</strong>：点面板边缘的竖排把手，整个右侧收成 26px，视频区宽 857 → 1378 px。</figcaption>
-      </figure>
-      <figure class="shot" style="margin:0">
-        <img src="shots/preview-2-styles.png" alt="Four mask styles: soft blur, frosted glass, mosaic, solid bar" loading="lazy">
-        <figcaption data-i18n-html="scr.c3"><strong>四种遮罩样式</strong>，默认柔和模糊（最自然，看不出遮罩边界）。</figcaption>
-      </figure>
-      <figure class="shot" style="margin:0">
-        <img src="shots/mask-settings.png" alt="The subtitle mask section in Settings" loading="lazy">
-        <figcaption data-i18n-html="scr.c4"><strong>可控</strong>：样式、模糊强度、自动定位开关、上下边界，都能在设置里调。</figcaption>
-      </figure>
+    <div class="facts">
+      <div class="fact">
+        <h3 data-i18n="fa1t">本机识别与翻译</h3>
+        <p data-i18n="fa1b">Whisper 与 opus-mt 的量化模型跑在浏览器 WebAssembly 里。首次需联网下载模型，之后断网可用；视频从不离开本机。</p>
+      </div>
+      <div class="fact">
+        <h3 data-i18n="fa2t">能接着上次看</h3>
+        <p data-i18n="fa2b">最近的文件名、已生成字幕与播放位置存在本机浏览器。网页无法记住本机文件路径，重开时需你再选一次同一个文件，字幕与位置不会丢。</p>
+      </div>
+      <div class="fact">
+        <h3 data-i18n="fa3t">辅助，不是标准答案</h3>
+        <p data-i18n="fa3b">句子级翻译对长句和俚语会有偏差；词义来自离线 ECDICT。精读时请以原文为准，有现成字幕时导入 srt / vtt 最准。</p>
+      </div>
     </div>
   </div>
 </section>
@@ -614,46 +445,19 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: cent
       <tr><td><kbd>L</kbd></td><td data-i18n="k4">循环本句</td></tr>
       <tr><td><kbd>S</kbd></td><td data-i18n="k5">朗读本句</td></tr>
       <tr><td><kbd>D</kbd></td><td data-i18n="k6">收藏本句</td></tr>
-      <tr><td><kbd>E</kbd> / <kbd>C</kbd></td><td data-i18n="k7">显示 / 隐藏右侧英文 / 中文</td></tr>
+      <tr><td><kbd>E</kbd> / <kbd>C</kbd></td><td data-i18n="k7">显示 / 隐藏右侧原文 / 中文</td></tr>
       <tr><td><kbd>H</kbd></td><td data-i18n="k8">收起 / 展开右侧字幕面板</td></tr>
       <tr><td><kbd>Alt</kbd></td><td data-i18n="k9">临时显示被模糊的画面字幕原文</td></tr>
-      <tr><td><kbd>Esc</kbd></td><td data-i18n="k10">关闭浮层</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td data-i18n="k10">关闭浮层 / 词卡</td></tr>
     </table>
-  </div>
-</section>
-
-<section id="offline">
-  <div class="wrap">
-    <div class="sec-head">
-      <h2 data-i18n="off.title">关于「离线」，如实说明</h2>
-      <p data-i18n="off.sub">不想用一句「完全离线」糊过去，边界说清楚比较好。</p>
-    </div>
-    <div class="grid grid-2">
-      <div class="card">
-        <h3 data-i18n="o1t">首次访问需要联网一次</h3>
-        <p data-i18n="o1b">识别模型（Whisper Base 约 80 MB / Tiny 约 44 MB）与翻译模型（约 120 MB）要下载一次。之后由 Service Worker 缓存，再打开就是断网可用。</p>
-      </div>
-      <div class="card">
-        <h3 data-i18n="o2t">之后就不再需要网络</h3>
-        <p data-i18n-html="o2b">识别、翻译、词典查询、语音合成全部在本机完成。<strong>没有任何服务器参与</strong>，也没有任何数据上传 —— 你可以在加载完之后直接拔掉网线验证。</p>
-      </div>
-      <div class="card">
-        <h3 data-i18n="o3t">视频从不离开本机</h3>
-        <p data-i18n-html="o3b">视频用 <code>blob:</code> URL 加载，只存在于当前页面内存里。页面关闭即释放，不会被写入任何服务器或云盘。</p>
-      </div>
-      <div class="card">
-        <h3 data-i18n="o4t">想要彻底的离线体验</h3>
-        <p data-i18n="o4b">把它打包成 macOS 应用：模型随包带着，连「首次下载」这一步都省了，双击即是完整功能。</p>
-      </div>
-    </div>
   </div>
 </section>
 
 <section id="mac">
   <div class="wrap">
     <div class="sec-head">
-      <h2 data-i18n="mac.title">打包成 macOS 应用</h2>
-      <p data-i18n-html="mac.sub">自包含的 <code>.app</code>（约 553 MB，其中模型 237 MB），模型内置，双击即用。</p>
+      <h2 data-i18n="mac.title">也可以装成 macOS 应用</h2>
+      <p data-i18n-html="mac.sub">自包含的 <code>.app</code>，模型内置，双击即用；不想装也能直接用网页版。</p>
     </div>
 <pre data-i18n-html="mac.pre"><span class="c"># 需要 node，以及 macOS 自带的 ditto / plutil / codesign</span>
 git clone https://github.com/KJHAJKSLFHA/echolingo
@@ -662,45 +466,10 @@ node build.mjs          <span class="c"># → ../dist/EchoLingo.app</span>
 open ../dist/EchoLingo.app</pre>
     <ul class="plain">
       <li data-i18n-html="mac.l1">打包脚本<strong>零依赖</strong>：自己下 Electron 的 zip、用 <code>ditto</code> 解压、手工组装 bundle、<code>codesign</code> ad-hoc 重签。</li>
-      <li data-i18n="mac.l2">首次构建会下载 Electron（124 MB，镜像优先），之后重建是秒级。</li>
+      <li data-i18n="mac.l2">首次构建会下载 Electron，之后重建是秒级。</li>
       <li data-i18n="mac.l3">Apple Silicon 上 ad-hoc 重签不能省 —— 签名无效的 arm64 应用会被系统拒绝启动。</li>
       <li data-i18n-html="mac.l4">没有 Apple 开发者签名，首次打开若被拦：右键 →「打开」，或 <code>xattr -dr com.apple.quarantine /Applications/EchoLingo.app</code>。</li>
     </ul>
-  </div>
-</section>
-
-<section id="tech">
-  <div class="wrap">
-    <div class="sec-head">
-      <h2 data-i18n="tech.title">技术上的几个关键选择</h2>
-      <p data-i18n="tech.sub">如果你也打算做类似的东西，这几条能帮你少踩坑。</p>
-    </div>
-    <div class="grid grid-3">
-      <div class="card">
-        <h3 data-i18n="t1t">必须有 COOP / COEP 响应头</h3>
-        <p data-i18n-html="t1b">onnxruntime 的 wasm 后端要开多线程就得有 <code>SharedArrayBuffer</code>，而浏览器只在 <code>crossOriginIsolated</code> 时放开它 —— 条件正是这两个响应头。少了不会报错，只会悄悄退化成单线程。</p>
-      </div>
-      <div class="card">
-        <h3 data-i18n="t2t">多会话并行，而不是单会话多线程</h3>
-        <p data-i18n="t2b">一段音频不管多长都要付一次约 1.6 秒的「30 秒窗口」编码器固定开销，加线程救不了它。把切好的段分给多个 Worker 同时跑才是正解，而且不改变拼接结果，准确度零损失。</p>
-      </div>
-      <div class="card">
-        <h3 data-i18n="t3t">字幕遮罩用 backdrop-filter</h3>
-        <p data-i18n="t3b">盖一个空 div 让合成器去模糊背后的像素，不复制视频帧、不逐帧重绘。只有马赛克样式需要退回 canvas。</p>
-      </div>
-      <div class="card">
-        <h3 data-i18n="t4t">逐词时间戳只贵 13%</h3>
-        <p data-i18n-html="t4b">实测 <code>'word'</code> 比不带时间戳贵约 13%，而句子边界和跟读高亮都依赖它。有些环境下 <code>return_timestamps: true</code> 对从中间切出的段会返回空文本 —— 这个坑很深。</p>
-      </div>
-      <div class="card">
-        <h3 data-i18n="t5t">每一段音频必须短于 30 秒</h3>
-        <p data-i18n-html="t5b">whisper 的特征提取器窗口固定 30 秒，超出的部分是<strong>静默裁掉</strong>的，不报错也不自动分块。表现就是「少句子、上下文接不上」。</p>
-      </div>
-      <div class="card">
-        <h3 data-i18n="t6t">词典也要能离线</h3>
-        <p data-i18n="t6b">ECDICT 按首字母切成 27 个分片，查到哪个词才加载哪个分片，34000 词条不会一次性拖进来。</p>
-      </div>
-    </div>
   </div>
 </section>
 
@@ -712,6 +481,7 @@ open ../dist/EchoLingo.app</pre>
     <span data-i18n="ft.license">MIT License</span>
     <a href="https://github.com/KJHAJKSLFHA/echolingo">GitHub</a>
     <a href="app/" data-i18n="ft.open">打开工具</a>
+    <a href="download/helper/" data-i18n="ft.get">取流助手</a>
     <span style="margin-left:auto" data-i18n="ft.credits">词典数据 ECDICT（MIT）· 模型 Whisper / opus-mt 的 ONNX 量化版 · 运行时 transformers.js + onnxruntime-web</span>
   </div>
 </footer>
@@ -726,192 +496,172 @@ var SITE_I18N = {
     'page.title': 'EchoLingo · 回声语言 — 英语与西语视频精读，全部在本机完成',
     'page.desc': '导入英语或西语视频，自动识别每一句话，右侧原文与中文对照、逐词跟读高亮、点词查释义。识别与翻译全部在你的浏览器里跑，视频不出本机，断网可用。还能把画面里烧录的字幕就地模糊掉，逼自己先听。',
     'logo.sub': '回声语言',
-    'nav.features': '功能', 'nav.screens': '截图', 'nav.offline': '离线', 'nav.mac': 'macOS 版', 'nav.open': '打开工具',
+    'nav.how': '怎么用', 'nav.facts': '边界', 'nav.keys': '快捷键', 'nav.download': '下载', 'nav.open': '打开工具',
+    'nav.get': '取流助手',
     'hero.badge': '英语 / 西班牙语 · 识别与翻译 100% 在本机完成 · 断网可用',
-    'hero.h1': '看英语或西语视频，<span class="hl">不用再盯着字幕</span>',
-    'hero.lede': '导入一段英语或西班牙语视频，自动识别每一句话，右侧原文与中文对照、播放到哪个词哪个词就变浅绿；点任意单词查释义与发音，整句可朗读可收藏。识别与翻译都在你自己的浏览器里跑，<strong>视频不出本机</strong>。',
-    'hero.cta1': '开始使用', 'hero.cta2': '看看有什么功能',
-    'hero.note': '首次打开需下载模型（英语约 200 MB / 西语约 290 MB，只此一次；两种语言分开下，只用一种就只下一次），之后由浏览器缓存，拔网线也能继续用。',
-    'hero.cap': '画面里烧录的英文字幕，可以就地模糊掉 —— 逼自己先听，按住 <kbd>Alt</kbd> 临时看原文。',
-    'feat.title': '它解决的三个具体问题',
-    'feat.sub': '不是又一个「播放器 + 字幕」，针对的是精读外语视频时真正卡住的地方。目前支持英语与西班牙语，界面有中文 / English / Español 三套。',
-    'f1t': '画面字幕让你在阅读，不是听力', 'f1b': '很多学习视频把英文字幕直接烧进了画面。眼睛盯着它，其实是在做阅读理解 —— 听力一点没练到。',
-    'f2t': '烧录字幕就地模糊', 'f2b': '只模糊画面底部那一条，人物、手势、上方的大字都不动。自动定位字幕位置，也可手动拖边界。',
-    'f3t': '右侧译文也在剧透', 'f3b': '就算画面字幕糊了，眼睛还是会往右边的英文原文瞟。',
-    'f4t': '中英可分别收起', 'f4b': '英文、中文两个开关独立控制（<kbd>E</kbd> / <kbd>C</kbd>）。整个字幕面板也能收成一条把手（<kbd>H</kbd>），视频直接占满屏。',
-    'f5t': '云端识别意味着上传视频', 'f5b': '大多数同类工具要把你的视频传到服务器上跑，慢、要排队，而且内容不再只属于你。',
-    'f6t': '识别翻译全在本机', 'f6b': 'whisper + opus-mt 的量化模型跑在浏览器里，用 WebAssembly 多线程。视频从不离开你的电脑。',
-    'scr.title': '界面', 'scr.sub': '深色 / 浅色两套配色，界面中英双语可切。下面是实拍，不是效果图。',
-    'scr.c1': '<strong>中英独立收起</strong>：默认都显示；关掉英文只留中文练听力；也可以两个都关，只剩时间码。',
-    'scr.c2': '<strong>面板收起</strong>：点面板边缘的竖排把手，整个右侧收成 26px，视频区宽 857 → 1378 px。',
-    'scr.c3': '<strong>四种遮罩样式</strong>，默认柔和模糊（最自然，看不出遮罩边界）。',
-    'scr.c4': '<strong>可控</strong>：样式、模糊强度、自动定位开关、上下边界，都能在设置里调。',
+    'hero.h1': '看英语或西语视频，<span class="hl">逐句听懂，而不是逐字读</span>',
+    'hero.lede': '导入一段视频，自动得到原文与中文对照；播放到哪一句，右侧就停在哪一句。点任意单词看释义与发音，画面里烧录的字幕可以就地模糊掉。<strong>识别与翻译都在本机完成，视频不出你的电脑。</strong>',
+    'hero.cta1': '打开工具', 'hero.cta2': '看它怎么工作',
+    'hero.note': '首次打开需下载识别与翻译模型（约 200 MB，只此一次），之后由浏览器缓存，断网也能继续用。',
+    'hero.pay': '一次性买断 · 永久使用，一个激活码换电脑也能用',
+    'hero.payLink': '领取激活码',
+    'hero.capLight': '浅色：冷白工作面，蓝色强调只落在当前句。',
+    'hero.capDark': '深色：深灰蓝底，长时间阅读不刺眼。',
+    'how.title': '三步，都在同一个界面里',
+    'how.sub': '没有弹窗接力，也没有「导出再导入」。下面是同一份界面的实际截图。',
+    'how.s1': '01 · 导入与识别',
+    'how.c1t': '拖进来，字幕自己长出来',
+    'how.c1b': '支持 mp4 / mov / mkv / webm，也支持 mp3 / m4a / wav。识别过程显示真实阶段与进度，随时可以取消；失败会明确告诉你哪一步失败，并能就地重试。',
+    'how.c1l1': '原文最强、译文次级，第三语言可折叠', 'how.c1l2': '可以只导入 srt / vtt，跳过识别',
+    'how.c1cap': '左侧视频与播放条，右侧逐句原文 / 译文。',
+    'how.s2': '02 · 逐词',
+    'how.c2t': '点一个词，先听发音，再看释义',
+    'how.c2b': '词卡显示音标、词典义项与它所在的那一句。没有可靠的上下文义项时不会编造，只标注「当前句」并把已有译文原样放在旁边。',
+    'how.c2l1': '可选「查词时自动暂停」，关闭后只在原本播放时续播', 'how.c2l2': '收藏进入生词本，交给间隔复习',
+    'how.c2cap': '词卡：音标、义项、当前句上下文、收藏。',
+    'how.s3': '03 · 练听力',
+    'how.c3t': '把「看得懂」换成「听得清」',
+    'how.c3b': '遮住画面里烧录的字幕，右侧也能逐列收起。播放条只留播放、上一句 / 下一句、重播、循环和速度；遮罩样式与强度收进设置，不占播放空间。',
+    'how.c3l1': '按住 Alt 临时揭开原文', 'how.c3l2': '键盘：空格、← →、R、L、E、C、H',
+    'how.c3cap': '画面烧录字幕可就地模糊，位置可自动检测或手动调整。',
+    'facts.title': '它是什么，不是什么',
+    'facts.sub': '边界说清楚，比一句「全离线」更有用。',
+    'fa1t': '本机识别与翻译',
+    'fa1b': 'Whisper 与 opus-mt 的量化模型跑在浏览器 WebAssembly 里。首次需联网下载模型，之后断网可用；视频从不离开本机。',
+    'fa2t': '能接着上次看',
+    'fa2b': '最近的文件名、已生成字幕与播放位置存在本机浏览器。网页无法记住本机文件路径，重开时需你再选一次同一个文件，字幕与位置不会丢。',
+    'fa3t': '辅助，不是标准答案',
+    'fa3b': '句子级翻译对长句和俚语会有偏差；词义来自离线 ECDICT。精读时请以原文为准，有现成字幕时导入 srt / vtt 最准。',
     'key.title': '快捷键', 'key.sub': '练听力时手不用离开键盘。',
     'k1': '播放 / 暂停', 'k2': '上一句 / 下一句', 'k3': '重播本句', 'k4': '循环本句', 'k5': '朗读本句',
-    'k6': '收藏本句', 'k7': '显示 / 隐藏右侧英文 / 中文', 'k8': '收起 / 展开右侧字幕面板',
-    'k9': '临时显示被模糊的画面字幕原文', 'k10': '关闭浮层',
-    'off.title': '关于「离线」，如实说明', 'off.sub': '不想用一句「完全离线」糊过去，边界说清楚比较好。',
-    'o1t': '首次访问需要联网一次', 'o1b': '模型要下载一次：英语是 Whisper Base 约 80 MB（或 Tiny 44 MB）＋ 翻译模型约 120 MB；西班牙语另算，识别约 80 MB ＋ 西→英 120 MB ＋ 英→中 120 MB。之后由 Service Worker 缓存，再打开就是断网可用。',
-    'o2t': '之后就不再需要网络', 'o2b': '识别、翻译、词典查询、语音合成全部在本机完成。<strong>没有任何服务器参与</strong>，也没有任何数据上传 —— 你可以在加载完之后直接拔掉网线验证。',
-    'o3t': '视频从不离开本机', 'o3b': '视频用 <code>blob:</code> URL 加载，只存在于当前页面内存里。页面关闭即释放，不会被写入任何服务器或云盘。',
-    'o4t': '想要彻底的离线体验', 'o4b': '把它打包成 macOS 应用：模型随包带着，连「首次下载」这一步都省了，双击即是完整功能。',
-    'mac.title': '打包成 macOS 应用',
-    'mac.sub': '自包含的 <code>.app</code>（约 553 MB，其中模型 237 MB），模型内置，双击即用。',
+    'k6': '收藏本句', 'k7': '显示 / 隐藏右侧原文 / 中文', 'k8': '收起 / 展开右侧字幕面板',
+    'k9': '临时显示被模糊的画面字幕原文', 'k10': '关闭浮层 / 词卡',
+    'mac.title': '也可以装成 macOS 应用',
+    'mac.sub': '自包含的 <code>.app</code>，模型内置，双击即用；不想装也能直接用网页版。',
     'mac.pre': '<span class="c"># 需要 node，以及 macOS 自带的 ditto / plutil / codesign</span>\ngit clone https://github.com/KJHAJKSLFHA/echolingo\ncd echolingo/desktop\nnode build.mjs          <span class="c"># → ../dist/EchoLingo.app</span>\nopen ../dist/EchoLingo.app',
     'mac.l1': '打包脚本<strong>零依赖</strong>：自己下 Electron 的 zip、用 <code>ditto</code> 解压、手工组装 bundle、<code>codesign</code> ad-hoc 重签。',
-    'mac.l2': '首次构建会下载 Electron（124 MB，镜像优先），之后重建是秒级。',
+    'mac.l2': '首次构建会下载 Electron，之后重建是秒级。',
     'mac.l3': 'Apple Silicon 上 ad-hoc 重签不能省 —— 签名无效的 arm64 应用会被系统拒绝启动。',
     'mac.l4': '没有 Apple 开发者签名，首次打开若被拦：右键 →「打开」，或 <code>xattr -dr com.apple.quarantine /Applications/EchoLingo.app</code>。',
-    'tech.title': '技术上的几个关键选择', 'tech.sub': '如果你也打算做类似的东西，这几条能帮你少踩坑。',
-    't1t': '必须有 COOP / COEP 响应头', 't1b': 'onnxruntime 的 wasm 后端要开多线程就得有 <code>SharedArrayBuffer</code>，而浏览器只在 <code>crossOriginIsolated</code> 时放开它 —— 条件正是这两个响应头。少了不会报错，只会悄悄退化成单线程。',
-    't2t': '多会话并行，而不是单会话多线程', 't2b': '一段音频不管多长都要付一次约 1.6 秒的「30 秒窗口」编码器固定开销，加线程救不了它。把切好的段分给多个 Worker 同时跑才是正解，而且不改变拼接结果，准确度零损失。',
-    't3t': '字幕遮罩用 backdrop-filter', 't3b': '盖一个空 div 让合成器去模糊背后的像素，不复制视频帧、不逐帧重绘。只有马赛克样式需要退回 canvas。',
-    't4t': '逐词时间戳只贵 13%', 't4b': '实测 <code>\'word\'</code> 比不带时间戳贵约 13%，而句子边界和跟读高亮都依赖它。有些环境下 <code>return_timestamps: true</code> 对从中间切出的段会返回空文本 —— 这个坑很深。',
-    't5t': '每一段音频必须短于 30 秒', 't5b': 'whisper 的特征提取器窗口固定 30 秒，超出的部分是<strong>静默裁掉</strong>的，不报错也不自动分块。表现就是「少句子、上下文接不上」。',
-    't6t': '词典也要能离线', 't6b': 'ECDICT 按首字母切成 27 个分片，查到哪个词才加载哪个分片，34000 词条不会一次性拖进来。',
     'theme.auto': '外观：跟随系统', 'theme.light': '外观：浅色', 'theme.dark': '外观：深色',
-    'ft.license': 'MIT License', 'ft.open': '打开工具',
+    'ft.license': 'MIT License', 'ft.open': '打开工具', 'ft.get': '取流助手',
     'ft.credits': '词典数据 ECDICT（MIT）· 模型 Whisper / opus-mt 的 ONNX 量化版 · 运行时 transformers.js + onnxruntime-web'
   },
 
   en: {
     'page.title': 'EchoLingo — close-read English and Spanish videos, entirely on your machine',
     'page.desc': 'Drop in an English or Spanish video and every sentence is transcribed automatically. Bilingual subtitles, word-by-word highlighting, click any word for its meaning. Recognition and translation run in your browser, so your video never leaves your machine. Burned-in subtitles can be blurred in place so you actually listen.',
-    'logo.sub': 'Reader',
-    'nav.features': 'Features', 'nav.screens': 'Screenshots', 'nav.offline': 'Offline', 'nav.mac': 'macOS app', 'nav.open': 'Open the tool',
-    'hero.badge': 'English & Spanish · recognition and translation run 100% on your machine · works offline',
-    'hero.h1': 'Watch English or Spanish videos, <span class="hl">without staring at subtitles</span>',
-    'hero.lede': 'Drop in an English or Spanish video and every sentence is transcribed automatically. The original and Chinese side by side, with word-by-word highlighting as it plays; click any word for its meaning and pronunciation, replay or save whole sentences. Recognition and translation run in your own browser, so <strong>your video never leaves your machine</strong>.',
-    'hero.cta1': 'Get started', 'hero.cta2': 'See what it does',
-    'hero.note': 'The first visit downloads the models (about 200 MB for English, 290 MB for Spanish, one time; the two languages download separately). After that your browser caches them and everything keeps working with the network off.',
-    'hero.cap': 'Subtitles burned into the picture can be blurred in place, so you have to listen first. Hold <kbd>Alt</kbd> to peek at the original.',
-    'feat.title': 'Three specific problems it solves',
-    'feat.sub': 'Not just another player with subtitles. It targets what actually gets in the way when you study a video closely. English and Spanish are supported, and the UI comes in Chinese, English and Spanish.',
-    'f1t': 'On-screen subtitles mean you are reading, not listening',
-    'f1b': 'Many learning videos burn the English subtitles right into the picture. Staring at them is reading practice, and you get no listening practice at all.',
-    'f2t': 'Burned-in subtitles blurred in place',
-    'f2b': 'Only the strip at the bottom of the picture is blurred. The speaker, the gestures, the large text above all stay untouched. The band is located automatically and can be dragged by hand.',
-    'f3t': 'The translation panel spoils it too',
-    'f3b': 'Even with the on-screen subtitles blurred, your eyes still drift to the English on the right.',
-    'f4t': 'English and Chinese collapse independently',
-    'f4b': 'Two independent switches (<kbd>E</kbd> / <kbd>C</kbd>). The whole subtitle panel can also collapse into a slim handle (<kbd>H</kbd>) so the video fills the screen.',
-    'f5t': 'Cloud transcription means uploading your video',
-    'f5b': 'Most tools like this send your video to a server. Slow, queued, and the content is no longer only yours.',
-    'f6t': 'Recognition and translation are local',
-    'f6b': 'Quantized whisper and opus-mt models run in your browser on multi-threaded WebAssembly. Your video never leaves your computer.',
-    'scr.title': 'Interface', 'scr.sub': 'Dark and light themes, and the whole UI switches between Chinese and English. These are real captures, not mockups.',
-    'scr.c1': '<strong>English and Chinese collapse independently</strong>: both shown by default; hide English to practise listening with Chinese only; hide both to leave just the time codes.',
-    'scr.c2': '<strong>Collapse the panel</strong>: click the vertical handle on its edge and the whole right side shrinks to 26 px. The video area goes from 857 to 1378 px wide.',
-    'scr.c3': '<strong>Four mask styles</strong>, with soft blur as the default (the most natural, you cannot see the mask edge).',
-    'scr.c4': '<strong>Adjustable</strong>: style, blur strength, auto-detect and the top/bottom edges are all in Settings.',
-    'key.title': 'Keyboard shortcuts', 'key.sub': 'Your hands never leave the keyboard.',
-    'k1': 'Play / pause', 'k2': 'Previous / next sentence', 'k3': 'Replay this sentence', 'k4': 'Loop this sentence',
-    'k5': 'Read this sentence aloud', 'k6': 'Save this sentence', 'k7': 'Show / hide the English or Chinese column',
-    'k8': 'Collapse / expand the subtitle panel', 'k9': 'Peek at the blurred on-screen subtitles', 'k10': 'Close overlays',
-    'off.title': 'About "offline", the honest version',
-    'off.sub': 'Rather than hide behind the phrase "fully offline", here are the actual boundaries.',
-    'o1t': 'The first visit needs the network, once',
-    'o1b': 'The models are downloaded once: for English that is Whisper Base (about 80 MB, or 44 MB for Tiny) plus the translation model (about 120 MB). Spanish is separate: about 80 MB for recognition, plus 120 MB Spanish-to-English and 120 MB English-to-Chinese. After that the Service Worker caches them and it opens with the network off.',
-    'o2t': 'After that, no network at all',
-    'o2b': 'Recognition, translation, dictionary lookups and speech synthesis all happen locally. <strong>No server is involved</strong> and nothing is uploaded. You can pull the network cable after loading and check for yourself.',
-    'o3t': 'Your video never leaves the machine',
-    'o3b': 'Videos load through a <code>blob:</code> URL and exist only in the current page\u2019s memory. They are released when the page closes and are never written to any server or cloud drive.',
-    'o4t': 'Want a fully offline experience',
-    'o4b': 'Package it as a macOS app: the models travel inside the bundle, so even the first download disappears. Double-click and everything is there.',
-    'mac.title': 'Package it as a macOS app',
-    'mac.sub': 'A self-contained <code>.app</code> (about 553 MB, 237 MB of which is models). Models included, double-click to run.',
+    'logo.sub': 'echo language',
+    'nav.how': 'How it works', 'nav.facts': 'Limits', 'nav.keys': 'Shortcuts', 'nav.download': 'Download', 'nav.open': 'Open the tool',
+    'nav.get': 'Video fetcher',
+    'hero.badge': 'English / Spanish · transcription and translation 100% on your machine · works offline',
+    'hero.h1': 'Watch English or Spanish videos, <span class="hl">one sentence at a time</span>',
+    'hero.lede': 'Drop in a video and get the original plus a Chinese translation, line by line. The subtitle panel follows playback. Click any word for its meaning and pronunciation; burned-in subtitles can be blurred in place. <strong>Transcription and translation run locally — the video never leaves your computer.</strong>',
+    'hero.cta1': 'Open the tool', 'hero.cta2': 'See how it works',
+    'hero.note': 'The first visit downloads the speech and translation models (about 200 MB, one time). After that the browser caches them and the whole app works offline.',
+    'hero.capLight': 'Light: cool white surfaces, with the accent reserved for the current line.',
+    'hero.capDark': 'Dark: dark grey-blue, easier on the eyes for long reading sessions.',
+    'how.title': 'Three steps, one interface',
+    'how.sub': 'No chained dialogs and no export/import dance. These are captures of the same screen.',
+    'how.s1': '01 · Import and transcribe',
+    'how.c1t': 'Drop it in; the subtitles appear as they are made',
+    'how.c1b': 'mp4 / mov / mkv / webm, plus mp3 / m4a / wav. Progress reflects the real stage and can be cancelled at any time. A failure says which step failed and can be retried in place.',
+    'how.c1l1': 'Original is strongest, translation secondary, a third language can be folded away',
+    'how.c1l2': 'You can import srt / vtt instead of transcribing',
+    'how.c1cap': 'Video and transport on the left, sentence-by-sentence original and translation on the right.',
+    'how.s2': '02 · Word by word',
+    'how.c2t': 'Click a word: hear it, then read it',
+    'how.c2b': 'The card shows the phonetic spelling, dictionary senses and the sentence it came from. When no reliable contextual sense exists it does not invent one: it labels the sentence and shows the existing translation verbatim.',
+    'how.c2l1': 'Optional pause-on-lookup; closing resumes only if it was already playing',
+    'how.c2l2': 'Favorites go to a spaced-repetition review queue',
+    'how.c2cap': 'Word card: phonetics, senses, the current sentence and a favorite button.',
+    'how.s3': '03 · Train your ear',
+    'how.c3t': 'Trade “I can read it” for “I can hear it”',
+    'how.c3b': 'Blur the subtitles burned into the picture, and fold away either subtitle column. The transport keeps only play, previous / next sentence, replay, loop and speed; mask style and strength live in Settings, out of the way.',
+    'how.c3l1': 'Hold Alt to reveal the original temporarily',
+    'how.c3l2': 'Keyboard: Space, ← →, R, L, E, C, H',
+    'how.c3cap': 'Burned-in subtitles blurred in place; the band can be detected or dragged.',
+    'facts.title': 'What it is, and what it is not',
+    'facts.sub': 'Stating the limits is more useful than claiming “fully offline”.',
+    'fa1t': 'Local recognition and translation',
+    'fa1b': 'Quantised Whisper and opus-mt models run in browser WebAssembly. The first run downloads them; after that it works offline, and your video never leaves the machine.',
+    'fa2t': 'Pick up where you left off',
+    'fa2b': 'Recent file names, generated subtitles and playback position stay in this browser. A web page cannot remember a local file path, so reopening asks you to choose the same file again — the subtitles and position are kept.',
+    'fa3t': 'Aid, not ground truth',
+    'fa3b': 'Sentence-level translation drifts on long sentences and slang; word senses come from the offline ECDICT dictionary. Trust the original when close-reading, and import srt / vtt when you have human subtitles.',
+    'key.title': 'Shortcuts', 'key.sub': 'Keep your hands on the keyboard while listening.',
+    'k1': 'Play / pause', 'k2': 'Previous / next sentence', 'k3': 'Replay this sentence', 'k4': 'Loop this sentence', 'k5': 'Read this sentence aloud',
+    'k6': 'Save this sentence', 'k7': 'Show / hide the original / Chinese column', 'k8': 'Collapse / expand the subtitle panel',
+    'k9': 'Temporarily reveal blurred on-screen subtitles', 'k10': 'Close overlays / word card',
+    'mac.title': 'Or install it as a macOS app',
+    'mac.sub': 'A self-contained <code>.app</code> with the models inside; double-click to run. The web version needs no install.',
     'mac.pre': '<span class="c"># needs node, plus the ditto / plutil / codesign that ship with macOS</span>\ngit clone https://github.com/KJHAJKSLFHA/echolingo\ncd echolingo/desktop\nnode build.mjs          <span class="c"># → ../dist/EchoLingo.app</span>\nopen ../dist/EchoLingo.app',
     'mac.l1': 'The build script is <strong>dependency-free</strong>: it downloads the Electron zip itself, extracts with <code>ditto</code>, assembles the bundle by hand and re-signs it ad-hoc with <code>codesign</code>.',
-    'mac.l2': 'The first build downloads Electron (124 MB, mirror first); rebuilds after that take seconds.',
+    'mac.l2': 'The first build downloads Electron; rebuilds after that take seconds.',
     'mac.l3': 'On Apple Silicon the ad-hoc re-sign is not optional. An arm64 app with an invalid signature is refused by the system.',
     'mac.l4': 'There is no Apple Developer signature, so if the first launch is blocked: right-click, then Open, or <code>xattr -dr com.apple.quarantine /Applications/EchoLingo.app</code>.',
-    'tech.title': 'A few key decisions', 'tech.sub': 'If you are building something similar, these will save you some pain.',
-    't1t': 'COOP / COEP headers are mandatory',
-    't1b': 'The onnxruntime wasm backend needs <code>SharedArrayBuffer</code> for multi-threading, and browsers only expose it when <code>crossOriginIsolated</code> is true, which is exactly these two response headers. Nothing errors without them; it just silently falls back to a single thread.',
-    't2t': 'Many sessions in parallel, not one session with many threads',
-    't2b': 'Every chunk of audio pays a fixed ~1.6 s "30-second window" encoder cost no matter how short it is, and threads cannot help with that. Handing the chunks to several Workers at once does, and it does not change the resulting word sequence at all, so accuracy is untouched.',
-    't3t': 'The subtitle mask uses backdrop-filter',
-    't3b': 'An empty div blurs the pixels behind it, so there is no video-frame copying and no per-frame redraw. Only the mosaic style falls back to a canvas.',
-    't4t': 'Word timestamps cost only 13% more',
-    't4b': 'Measured: <code>\'word\'</code> is about 13% slower than no timestamps, and sentence boundaries plus karaoke highlighting both depend on it. In some environments <code>return_timestamps: true</code> returns empty text for segments cut from mid-speech. It is a deep trap.',
-    't5t': 'Every audio chunk must be under 30 seconds',
-    't5b': 'The whisper feature extractor window is fixed at 30 seconds. Anything beyond is <strong>silently truncated</strong>, with no error and no automatic chunking. It shows up as missing sentences and broken context.',
-    't6t': 'The dictionary has to work offline too',
-    't6b': 'ECDICT is split into 27 shards by first letter, so only the shard for the word you look up is loaded. 34,000 entries never arrive all at once.',
-    'theme.auto': 'Appearance: match system', 'theme.light': 'Appearance: light', 'theme.dark': 'Appearance: dark',
-    'ft.license': 'MIT License', 'ft.open': 'Open the tool',
-    'ft.credits': 'Dictionary data ECDICT (MIT) · Whisper / opus-mt ONNX quantized models · transformers.js + onnxruntime-web'
+    'theme.auto': 'Theme: follow system', 'theme.light': 'Theme: light', 'theme.dark': 'Theme: dark',
+    'ft.license': 'MIT License', 'ft.open': 'Open the tool', 'ft.get': 'Video fetcher',
+    'ft.credits': 'Dictionary data ECDICT (MIT) · ONNX-quantised Whisper / opus-mt models · transformers.js + onnxruntime-web'
   },
 
   es: {
-    'page.title': 'EchoLingo — lee a fondo vídeos en inglés o español, todo en tu equipo',
-    'page.desc': 'Carga un vídeo en inglés o español y cada frase se transcribe automáticamente. Subtítulos bilingües, resaltado palabra por palabra y definición al hacer clic en cualquier palabra. El reconocimiento y la traducción se ejecutan en tu navegador, así que el vídeo nunca sale de tu equipo. Los subtítulos incrustados en la imagen se pueden difuminar para que de verdad escuches.',
-    'logo.sub': 'Lector',
-    'nav.features': 'Funciones', 'nav.screens': 'Capturas', 'nav.offline': 'Sin conexión', 'nav.mac': 'App para macOS', 'nav.open': 'Abrir la herramienta',
-    'hero.badge': 'Inglés y español · reconocimiento y traducción 100% en tu equipo · funciona sin conexión',
-    'hero.h1': 'Mira vídeos en inglés o español, <span class="hl">sin quedarte mirando los subtítulos</span>',
-    'hero.lede': 'Carga un vídeo en inglés o español y cada frase se transcribe automáticamente. El original y el chino uno al lado del otro, con resaltado palabra por palabra mientras se reproduce; haz clic en cualquier palabra para ver su significado y su pronunciación, y repite o guarda frases enteras. El reconocimiento y la traducción se ejecutan en tu propio navegador, así que <strong>el vídeo nunca sale de tu equipo</strong>.',
-    'hero.cta1': 'Empezar', 'hero.cta2': 'Ver qué hace',
-    'hero.note': 'La primera visita descarga los modelos (unos 200 MB para inglés y 290 MB para español, solo una vez; cada idioma se descarga por separado). Después el navegador los guarda en caché y todo sigue funcionando sin conexión.',
-    'hero.cap': 'Los subtítulos incrustados en la imagen se pueden difuminar en su sitio, para que primero escuches. Mantén <kbd>Alt</kbd> para echar un vistazo al original.',
-    'feat.title': 'Tres problemas concretos que resuelve',
-    'feat.sub': 'No es otro reproductor con subtítulos. Ataca lo que de verdad se interpone cuando estudias un vídeo a fondo. Hay inglés y español, y la interfaz viene en chino, inglés y español.',
-    'f1t': 'Los subtítulos en pantalla te hacen leer, no escuchar',
-    'f1b': 'Muchos vídeos didácticos incrustan los subtítulos en inglés directamente en la imagen. Mirarlos fijamente es práctica de lectura, y de comprensión auditiva no practicas nada.',
-    'f2t': 'Los subtítulos incrustados se difuminan en su sitio',
-    'f2b': 'Solo se difumina la franja inferior de la imagen. El hablante, los gestos y el texto grande de arriba quedan intactos. La banda se localiza automáticamente y también se puede arrastrar a mano.',
-    'f3t': 'El panel de traducción también lo destripa',
-    'f3b': 'Aunque los subtítulos en pantalla estén difuminados, la vista se te va igualmente al inglés de la derecha.',
-    'f4t': 'El inglés y el chino se ocultan por separado',
-    'f4b': 'Dos interruptores independientes (<kbd>E</kbd> / <kbd>C</kbd>). Todo el panel de subtítulos también se puede plegar en un tirador fino (<kbd>H</kbd>) para que el vídeo ocupe la pantalla entera.',
-    'f5t': 'Transcribir en la nube significa subir tu vídeo',
-    'f5b': 'Casi todas las herramientas parecidas mandan tu vídeo a un servidor. Va lento, hay cola y el contenido deja de ser solo tuyo.',
-    'f6t': 'El reconocimiento y la traducción son locales',
-    'f6b': 'Los modelos cuantizados whisper y opus-mt se ejecutan en tu navegador sobre WebAssembly multihilo. Tu vídeo nunca sale de tu ordenador.',
-    'scr.title': 'Interfaz', 'scr.sub': 'Temas claro y oscuro, y toda la interfaz cambia entre chino, inglés y español. Son capturas reales, no montajes.',
-    'scr.c1': '<strong>El inglés y el chino se ocultan por separado</strong>: por defecto se ven los dos; oculta el inglés para practicar con solo el chino; oculta ambos y quedan únicamente los códigos de tiempo.',
-    'scr.c2': '<strong>Plegar el panel</strong>: haz clic en el tirador vertical del borde y todo el lateral derecho se reduce a 26 px. La zona de vídeo pasa de 857 a 1378 px de ancho.',
-    'scr.c3': '<strong>Cuatro estilos de máscara</strong>, con el difuminado suave como predeterminado (el más natural, no se ve el borde de la máscara).',
-    'scr.c4': '<strong>Ajustable</strong>: el estilo, la intensidad del difuminado, la detección automática y los bordes superior e inferior están en Ajustes.',
-    'key.title': 'Atajos de teclado', 'key.sub': 'Las manos no se te van del teclado.',
-    'k1': 'Reproducir / pausar', 'k2': 'Frase anterior / siguiente', 'k3': 'Repetir esta frase', 'k4': 'Repetir esta frase en bucle',
-    'k5': 'Leer esta frase en voz alta', 'k6': 'Guardar esta frase', 'k7': 'Mostrar / ocultar la columna de inglés o de chino',
-    'k8': 'Plegar / desplegar el panel de subtítulos', 'k9': 'Ver un momento los subtítulos difuminados de la imagen', 'k10': 'Cerrar las capas flotantes',
-    'off.title': 'Sobre lo de "sin conexión", la versión honesta',
-    'off.sub': 'Antes que escudarse en la frase "totalmente sin conexión", mejor dejar claros los límites reales.',
-    'o1t': 'La primera visita necesita conexión, una vez',
-    'o1b': 'Los modelos se descargan una vez: para inglés es Whisper Base (unos 80 MB, o 44 MB para Tiny) más el modelo de traducción (unos 120 MB). El español va aparte: unos 80 MB de reconocimiento, más 120 MB de español a inglés y 120 MB de inglés a chino. Después el Service Worker los guarda en caché y se abre ya sin conexión.',
-    'o2t': 'A partir de ahí, ninguna conexión',
-    'o2b': 'El reconocimiento, la traducción, las consultas al diccionario y la síntesis de voz ocurren en local. <strong>No interviene ningún servidor</strong> y no se sube nada. Puedes desconectar la red después de cargar y comprobarlo tú mismo.',
-    'o3t': 'Tu vídeo nunca sale del equipo',
-    'o3b': 'Los vídeos se cargan mediante una URL <code>blob:</code> y solo existen en la memoria de la página actual. Se liberan al cerrarla y nunca se escriben en ningún servidor ni disco en la nube.',
-    'o4t': 'Si quieres una experiencia totalmente sin conexión',
-    'o4b': 'Empaquétalo como aplicación para macOS: los modelos viajan dentro del paquete, así que hasta la primera descarga desaparece. Doble clic y está todo.',
-    'mac.title': 'Empaquetarlo como aplicación para macOS',
-    'mac.sub': 'Un <code>.app</code> autocontenido (unos 553 MB, de los cuales 237 MB son modelos). Modelos incluidos, doble clic para ejecutar.',
+    'page.title': 'EchoLingo — leer en detalle vídeos en inglés y español, todo en tu equipo',
+    'page.desc': 'Suelta un vídeo en inglés o español y cada frase se transcribe sola. Subtítulos bilingües, resaltado palabra por palabra y definición al hacer clic. El reconocimiento y la traducción se ejecutan en tu navegador: el vídeo no sale de tu equipo. Los subtítulos incrustados se pueden difuminar en su sitio para que escuches de verdad.',
+    'logo.sub': 'lengua con eco',
+    'nav.how': 'Cómo funciona', 'nav.facts': 'Límites', 'nav.keys': 'Atajos', 'nav.download': 'Descargar', 'nav.open': 'Abrir la herramienta',
+    'nav.get': 'Descargador',
+    'hero.badge': 'Inglés / español · reconocimiento y traducción 100 % en tu equipo · sin conexión',
+    'hero.h1': 'Mira vídeos en inglés o español, <span class="hl">frase a frase</span>',
+    'hero.lede': 'Suelta un vídeo y obtén el original y su traducción al chino, línea a línea. El panel de subtítulos sigue la reproducción. Pulsa cualquier palabra para ver su significado y su pronunciación; los subtítulos incrustados se pueden difuminar en su sitio. <strong>El reconocimiento y la traducción ocurren en tu equipo: el vídeo no sale de él.</strong>',
+    'hero.cta1': 'Abrir la herramienta', 'hero.cta2': 'Ver cómo funciona',
+    'hero.note': 'La primera visita descarga los modelos de voz y de traducción (unos 200 MB, solo una vez). Después el navegador los guarda y todo funciona sin conexión.',
+    'hero.capLight': 'Claro: superficies blancas frías, con el acento reservado para la frase actual.',
+    'hero.capDark': 'Oscuro: gris azulado, más cómodo para leer durante mucho rato.',
+    'how.title': 'Tres pasos, una sola interfaz',
+    'how.sub': 'Sin cadenas de diálogos ni exportar e importar. Son capturas de la misma pantalla.',
+    'how.s1': '01 · Importar y transcribir',
+    'how.c1t': 'Suéltalo y los subtítulos van apareciendo',
+    'how.c1b': 'mp4 / mov / mkv / webm, además de mp3 / m4a / wav. El progreso refleja la fase real y se puede cancelar en cualquier momento. Si algo falla, dice en qué paso y se puede reintentar ahí mismo.',
+    'how.c1l1': 'El original manda, la traducción va después y el tercer idioma se puede plegar',
+    'how.c1l2': 'También puedes importar srt / vtt y saltarte la transcripción',
+    'how.c1cap': 'Vídeo y controles a la izquierda; original y traducción frase a frase a la derecha.',
+    'how.s2': '02 · Palabra por palabra',
+    'how.c2t': 'Pulsa una palabra: escúchala y luego léela',
+    'how.c2b': 'La tarjeta muestra la transcripción fonética, las acepciones del diccionario y la frase de la que sale. Cuando no hay un sentido contextual fiable no se lo inventa: marca la frase y muestra la traducción existente tal cual.',
+    'how.c2l1': 'Pausa opcional al consultar; al cerrar solo se reanuda si ya se estaba reproduciendo',
+    'how.c2l2': 'Los favoritos entran en una cola de repaso espaciado',
+    'how.c2cap': 'Tarjeta de palabra: fonética, acepciones, la frase actual y el botón de favorito.',
+    'how.s3': '03 · Entrena el oído',
+    'how.c3t': 'Cambia «lo leo» por «lo oigo»',
+    'how.c3b': 'Difumina los subtítulos incrustados en la imagen y pliega cualquiera de las columnas. Los controles conservan solo reproducir, frase anterior / siguiente, repetir, bucle y velocidad; el estilo y la intensidad de la máscara viven en Ajustes, fuera del camino.',
+    'how.c3l1': 'Mantén Alt para descubrir el original un momento',
+    'how.c3l2': 'Teclado: Espacio, ← →, R, L, E, C, H',
+    'how.c3cap': 'Subtítulos incrustados difuminados en su sitio; la franja se detecta o se arrastra.',
+    'facts.title': 'Qué es y qué no es',
+    'facts.sub': 'Decir los límites es más útil que prometer «todo sin conexión».',
+    'fa1t': 'Reconocimiento y traducción locales',
+    'fa1b': 'Los modelos cuantizados de Whisper y opus-mt se ejecutan en WebAssembly dentro del navegador. La primera vez hay que descargarlos; después funciona sin conexión y el vídeo nunca sale del equipo.',
+    'fa2t': 'Sigue donde lo dejaste',
+    'fa2b': 'Los nombres recientes, los subtítulos generados y la posición se guardan en este navegador. Una página no puede recordar la ruta de un archivo local, así que al reabrir hay que elegir el mismo archivo; los subtítulos y la posición se conservan.',
+    'fa3t': 'Una ayuda, no la verdad absoluta',
+    'fa3b': 'La traducción por frases se desvía en frases largas y jerga; las acepciones vienen del diccionario ECDICT sin conexión. Al leer en detalle, guíate por el original; si tienes subtítulos humanos, importar srt / vtt es lo más exacto.',
+    'key.title': 'Atajos', 'key.sub': 'Con las manos en el teclado mientras escuchas.',
+    'k1': 'Reproducir / pausar', 'k2': 'Frase anterior / siguiente', 'k3': 'Repetir esta frase', 'k4': 'Repetir en bucle', 'k5': 'Leer esta frase en voz alta',
+    'k6': 'Guardar esta frase', 'k7': 'Mostrar u ocultar la columna original / china', 'k8': 'Ocultar o mostrar el panel de subtítulos',
+    'k9': 'Descubrir un momento los subtítulos difuminados', 'k10': 'Cerrar ventanas flotantes / tarjeta',
+    'mac.title': 'O instálalo como app de macOS',
+    'mac.sub': 'Un <code>.app</code> autocontenido con los modelos dentro; doble clic para ejecutar. La versión web no necesita instalación.',
     'mac.pre': '<span class="c"># necesita node, además de ditto / plutil / codesign que vienen con macOS</span>\ngit clone https://github.com/KJHAJKSLFHA/echolingo\ncd echolingo/desktop\nnode build.mjs          <span class="c"># → ../dist/EchoLingo.app</span>\nopen ../dist/EchoLingo.app',
     'mac.l1': 'El script de empaquetado <strong>no tiene dependencias</strong>: descarga él mismo el zip de Electron, lo extrae con <code>ditto</code>, arma el paquete a mano y lo vuelve a firmar ad-hoc con <code>codesign</code>.',
-    'mac.l2': 'La primera compilación descarga Electron (124 MB, primero un espejo); las siguientes tardan segundos.',
-    'mac.l3': 'En Apple Silicon la refirma ad-hoc no es opcional. El sistema rechaza una app arm64 con la firma inválida.',
-    'mac.l4': 'No hay firma de Apple Developer, así que si el primer arranque queda bloqueado: clic derecho y luego Abrir, o <code>xattr -dr com.apple.quarantine /Applications/EchoLingo.app</code>.',
-    'tech.title': 'Algunas decisiones clave', 'tech.sub': 'Si vas a construir algo parecido, esto te ahorrará algún quebradero de cabeza.',
-    't1t': 'Las cabeceras COOP / COEP son obligatorias',
-    't1b': 'El backend wasm de onnxruntime necesita <code>SharedArrayBuffer</code> para el multihilo, y los navegadores solo lo exponen cuando <code>crossOriginIsolated</code> es verdadero, que es exactamente lo que habilitan estas dos cabeceras de respuesta. Sin ellas no da ningún error: simplemente se queda en un solo hilo sin avisar.',
-    't2t': 'Muchas sesiones en paralelo, no una sesión con muchos hilos',
-    't2b': 'Cada trozo de audio paga un coste fijo de encoder de ~1,6 s por la "ventana de 30 segundos", por corto que sea, y los hilos no ayudan con eso. Repartir los trozos entre varios Workers a la vez sí lo resuelve, y no cambia en absoluto la secuencia de palabras resultante, así que la precisión no se toca.',
-    't3t': 'La máscara de subtítulos usa backdrop-filter',
-    't3b': 'Un div vacío difumina los píxeles que tiene detrás, así que no se copian fotogramas de vídeo ni se redibuja en cada fotograma. Solo el estilo de mosaico recurre a un canvas.',
-    't4t': 'Las marcas de tiempo por palabra solo cuestan un 13% más',
-    't4b': 'Medido: <code>\'word\'</code> es un 13% más lento que sin marcas de tiempo, y tanto los límites de frase como el resaltado tipo karaoke dependen de ellas. En algunos entornos <code>return_timestamps: true</code> devuelve texto vacío en segmentos cortados a mitad de habla. Es una trampa profunda.',
-    't5t': 'Cada trozo de audio debe durar menos de 30 segundos',
-    't5b': 'La ventana del extractor de características de whisper está fijada en 30 segundos. Lo que la excede se <strong>trunca en silencio</strong>, sin error y sin troceado automático. Se nota en frases que faltan y en un contexto que no encaja.',
-    't6t': 'El diccionario también tiene que funcionar sin conexión',
-    't6b': 'ECDICT está partido en 27 fragmentos por letra inicial, así que solo se carga el fragmento de la palabra que consultas. Las 34.000 entradas nunca llegan de golpe.',
-    'theme.auto': 'Aspecto: según el sistema', 'theme.light': 'Aspecto: claro', 'theme.dark': 'Aspecto: oscuro',
-    'ft.license': 'Licencia MIT', 'ft.open': 'Abrir la herramienta',
-    'ft.credits': 'Datos del diccionario ECDICT (MIT) · Modelos ONNX cuantizados Whisper / opus-mt · transformers.js + onnxruntime-web'
+    'mac.l2': 'La primera compilación descarga Electron; las siguientes tardan segundos.',
+    'mac.l3': 'En Apple Silicon la firma ad-hoc no es opcional. El sistema rechaza una app arm64 con firma inválida.',
+    'mac.l4': 'No hay firma de Apple Developer, así que si el primer arranque se bloquea: clic derecho y Abrir, o <code>xattr -dr com.apple.quarantine /Applications/EchoLingo.app</code>.',
+    'theme.auto': 'Tema: seguir al sistema', 'theme.light': 'Tema: claro', 'theme.dark': 'Tema: oscuro',
+    'ft.license': 'Licencia MIT', 'ft.open': 'Abrir la herramienta', 'ft.get': 'Descargador',
+    'ft.credits': 'Datos del diccionario ECDICT (MIT) · modelos Whisper / opus-mt cuantizados en ONNX · transformers.js + onnxruntime-web'
   }
-};
+};;
 
 (function () {
   var lang = window.__SITE_LANG__ || 'zh';

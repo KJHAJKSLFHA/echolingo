@@ -62,9 +62,9 @@ export function ensureSrs(rec, now = Date.now()) {
 }
 
 /**
- * 自评之后排下一次。
+ * 根据一次答题结果排下一次。
  * @param {object} rec   收藏记录
- * @param {boolean} ok   true = 听懂了，false = 没听懂
+ * @param {boolean} ok   true = 答对，false = 答错
  * @param {number} now
  * @returns {object} 更新后的记录
  */

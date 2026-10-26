@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>下载 · EchoLingo</title>
+<meta name="description" content="EchoLingo 取流助手：装一次，网页版就能直接导入 YouTube 与哔哩哔哩的视频，不用先自己下载。全部在本机取回，不上传任何内容。">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#1f6feb">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f6feb'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' fill='white' text-anchor='middle'%3EEL%3C/text%3E%3C/svg%3E">
+<script>
+// 语言与主题都要在首帧之前定下来，否则会闪一下（和官网首页同一套约定）
+(function () {
+  var LANGS = ['zh', 'en', 'es'];
+  var saved = null;
+  try { saved = localStorage.getItem('echolingo.site.lang'); } catch (e) {}
+  var nav = (navigator.language || 'en').toLowerCase();
+  var guess = nav.indexOf('zh') === 0 ? 'zh' : (nav.indexOf('es') === 0 ? 'es' : 'en');
+  var lang = LANGS.indexOf(saved) >= 0 ? saved : guess;
+  var h = document.documentElement;
+  h.lang = lang === 'zh' ? 'zh-CN' : (lang === 'es' ? 'es' : 'en');
+  h.dataset.lang = lang;
+})();
+(function () {
+  var PREF = ['auto', 'light', 'dark'];
+  var pref = 'auto';
+  try { pref = localStorage.getItem('echolingo.site.theme') || 'auto'; } catch (e) {}
+  if (PREF.indexOf(pref) < 0) pref = 'auto';
+  var dark = false;
+  try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {}
+  var eff = pref === 'auto' ? (dark ? 'dark' : 'light') : pref;
+  var h = document.documentElement;
+  h.dataset.themePref = pref;
+  h.dataset.theme = eff;
+  h.style.colorScheme = eff;
+})();
+</script>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #fbfbfd;
+  --line: #e3e6ec; --line-strong: #d2d7e0; --line-hover: #b9c1ce;
+  --fg: #1a1d23; --fg-2: #4a5361; --fg-3: #7b8494;
+  --brand: #1f6feb; --brand-hover: #1a60d0; --brand-soft: #eaf1fe; --brand-line: #c3d8fb;
+  --ok: #1a7f4b; --warn: #9a6700; --warn-soft: #fff6e0; --warn-line: #f0dcae;
+  --radius: 10px; --radius-lg: 16px;
+  --shadow: 0 1px 2px rgba(16, 22, 34, .06), 0 8px 24px rgba(16, 22, 34, .06);
+}
+:root[data-theme="dark"] {
+  --bg: #0e1116; --panel: #161a21; --panel-2: #1b2029;
+  --line: #262c36; --line-strong: #333a46; --line-hover: #454e5d;
+  --fg: #e8ecf2; --fg-2: #aab3c0; --fg-3: #7d8798;
+  --brand: #4c8dff; --brand-hover: #6aa0ff; --brand-soft: #1b2740; --brand-line: #2c4372;
+  --ok: #4ec98a; --warn: #e2b96b; --warn-soft: #2a2318; --warn-line: #4a3d22;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 12px 32px rgba(0, 0, 0, .35);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--brand); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 820px; margin: 0 auto; padding: 0 24px 96px; }
+
+/* ── 顶栏 ── */
+.top {
+  display: flex; align-items: center; gap: 12px;
+  padding: 18px 0 8px;
+}
+.logo { display: flex; align-items: center; gap: 10px; color: var(--fg); font-weight: 700; font-size: 17px; }
+.logo:hover { text-decoration: none; }
+.logo i {
+  width: 30px; height: 30px; border-radius: 8px; background: var(--brand);
+  color: #fff; font-style: normal; font-size: 13px; font-weight: 700;
+  display: grid; place-items: center; letter-spacing: .5px;
+}
+.logo small { display: block; font-size: 11px; font-weight: 500; color: var(--fg-3); letter-spacing: .3px; }
+.top .spacer { flex: 1; }
+.top .back { font-size: 14px; color: var(--fg-2); }
+.top .back:hover { color: var(--fg); }
+.seg { display: flex; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+.seg button {
+  border: 0; background: transparent; color: var(--fg-3); font: inherit; font-size: 13px;
+  padding: 4px 9px; border-radius: 6px; cursor: pointer;
+}
+.seg button:hover { color: var(--fg); background: var(--panel-2); }
+.seg button[aria-pressed="true"] { color: var(--brand); background: var(--brand-soft); }
+
+/* ── 标题区 ── */
+header.hero { padding: 40px 0 8px; }
+h1 { font-size: 32px; line-height: 1.25; margin: 0 0 12px; letter-spacing: -.02em; }
+.lead { font-size: 17px; color: var(--fg-2); margin: 0 0 18px; max-width: 42em; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
+  color: var(--ok); background: var(--brand-soft); border: 1px solid var(--brand-line);
+  border-radius: 999px; padding: 3px 10px;
+}
+
+/* ── 平台卡片 ── */
+.cards { display: grid; gap: 16px; margin: 28px 0 8px; }
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  padding: 20px 22px; box-shadow: var(--shadow);
+}
+.card h2 { font-size: 17px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+.card h2 span.os { font-size: 13px; font-weight: 500; color: var(--fg-3); }
+.card p { color: var(--fg-2); font-size: 14.5px; margin: 6px 0 14px; }
+.dl { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 16px; border-radius: var(--radius); font-size: 14.5px; font-weight: 600;
+  border: 1px solid var(--line-strong); background: var(--panel-2); color: var(--fg);
+  cursor: pointer; transition: .12s;
+}
+.btn:hover { border-color: var(--line-hover); text-decoration: none; }
+.btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+.btn.primary:hover { background: var(--brand-hover); border-color: var(--brand-hover); }
+.btn small { font-weight: 400; opacity: .8; }
+.alt { font-size: 13px; color: var(--fg-3); margin: 12px 0 0; }
+
+/* ── 步骤 ── */
+ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 32px 0 0; }
+ol.steps li {
+  counter-increment: s; position: relative; padding: 0 0 18px 42px; color: var(--fg-2);
+  font-size: 15px;
+}
+ol.steps li::before {
+  content: counter(s); position: absolute; left: 0; top: 1px;
+  width: 26px; height: 26px; border-radius: 50%; background: var(--brand-soft);
+  color: var(--brand); border: 1px solid var(--brand-line);
+  font-size: 13px; font-weight: 700; display: grid; place-items: center;
+}
+ol.steps li b { color: var(--fg); }
+
+/* ── 提示块 ── */
+.note {
+  border: 1px solid var(--line); border-left: 3px solid var(--brand);
+  background: var(--panel); border-radius: var(--radius);
+  padding: 14px 18px; margin: 20px 0; font-size: 14.5px; color: var(--fg-2);
+}
+.note b { color: var(--fg); }
+.note.warn { border-left-color: var(--warn); background: var(--warn-soft); border-color: var(--warn-line); }
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px;
+  padding: 1px 5px; color: var(--fg);
+}
+h3 { font-size: 16px; margin: 34px 0 10px; }
+h3.group { margin-top: 48px; padding-top: 22px; border-top: 1px solid var(--line); font-size: 17px; }
+details {
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel);
+  padding: 12px 16px; margin: 10px 0;
+}
+details summary { cursor: pointer; font-weight: 600; font-size: 14.5px; }
+details p, details ul { color: var(--fg-2); font-size: 14px; }
+details ul { padding-left: 20px; }
+footer {
+  margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--line);
+  color: var(--fg-3); font-size: 13px; display: flex; gap: 14px; flex-wrap: wrap;
+}
+[data-lang="zh"] .t-en, [data-lang="zh"] .t-es,
+[data-lang="en"] .t-zh, [data-lang="en"] .t-es,
+[data-lang="es"] .t-zh, [data-lang="es"] .t-en { display: none; }
+@media (max-width: 560px) {
+  h1 { font-size: 26px; }
+  .wrap { padding: 0 18px 72px; }
+  .top .back span { display: none; }
+}
+
+  .pay { display: flex; gap: 16px; align-items: center; margin: 18px 0 4px; padding: 14px 16px;
+         border: 1px solid var(--line); border-radius: 14px; background: var(--panel-2); }
+  .pay-qr { flex: none; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
+  .pay-txt { display: flex; flex-direction: column; gap: 4px; }
+  .pay-txt b { font-size: 16px; color: var(--text); }
+  .pay-txt span { font-size: 13px; color: var(--text-2); line-height: 1.65; }
+  .pay-txt code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; padding: 1px 5px;
+                  border-radius: 5px; background: var(--panel); border: 1px solid var(--line); color: var(--text); }
+  @media (max-width: 560px) { .pay { flex-direction: column; align-items: flex-start; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <a class="logo" href="../index.html">
+      <i>EL</i>
+      <div>EchoLingo<small>回声语言</small></div>
+    </a>
+    <div class="spacer"></div>
+    <div class="seg" role="group" aria-label="语言">
+      <button type="button" data-set-lang="zh">中文</button>
+      <button type="button" data-set-lang="en">EN</button>
+      <button type="button" data-set-lang="es">ES</button>
+    </div>
+    <a class="back" href="../app/">← <span class="t-zh">打开网页版</span><span class="t-en">Open the web app</span><span class="t-es">Abrir la web</span></a>
+  </div>
+
+  <header class="hero">
+    <h1>
+      <span class="t-zh">下载 EchoLingo</span>
+      <span class="t-en">Download EchoLingo</span>
+      <span class="t-es">Descargar EchoLingo</span>
+    </h1>
+    <p class="lead">
+      <span class="t-zh">这里有两个东西，按需要挑一个装就行。<b>完整软件包</b>是整站离线版：网页界面、识别与翻译模型、取流能力全在里面，装上就能用，断网也能学；<b>取流助手</b>只有取流那一段，给「已经在用网页版、只想让链接能直接导」的人。</span>
+      <span class="t-en">Two things live here — pick one. The <b>full package</b> is the whole site offline: interface, recognition and translation models, and link fetching, all included; it works with no network at all. The <b>stream helper</b> is just the fetching part, for people already using the web app who only want links to open.</span>
+      <span class="t-es">Aquí hay dos cosas: elige una. El <b>paquete completo</b> es todo el sitio sin conexión (interfaz, modelos de reconocimiento y traducción, y descarga de enlaces). El <b>asistente de descarga</b> es solo esa parte, para quien ya usa la web y solo quiere que los enlaces funcionen.</span>
+    </p>
+    <span class="pill">✓
+      <span class="t-zh">全程本机运行，不上传任何内容</span>
+      <span class="t-en">Runs locally, uploads nothing</span>
+      <span class="t-es">Todo en local, no sube nada</span>
+    </span>
+    <div class="pay">
+      <img class="pay-qr" src="pay-qr.png" alt="微信支付" width="118" height="125">
+      <div class="pay-txt">
+        <b>¥9.9 <span class="t-zh">一次性买断 · 永久使用</span><span class="t-en">one-time · forever</span><span class="t-es">pago único · para siempre</span></b>
+        <span class="t-zh">扫码付款后把截图发我（微信 <code>Orion</code>，备注 EchoLingo），几分钟内回你激活码。第一次打开软件或网页时填进去就行。</span>
+        <span class="t-en">Pay, send me the screenshot (WeChat <code>Orion</code>, mention EchoLingo) and I reply with your code in minutes. Enter it the first time you open the app or the site.</span>
+        <span class="t-es">Paga, mándame la captura (WeChat <code>Orion</code>, menciona EchoLingo) y te respondo con el código en minutos. Se introduce la primera vez que abras la app o la web.</span>
+      </div>
+    </div>
+  </header>
+
+  <h3 class="group">
+    <span class="t-zh">完整软件包 · 装这个就不用再开网站</span>
+    <span class="t-en">Full package — install this and you never need the site again</span>
+    <span class="t-es">Paquete completo — con esto ya no necesitas el sitio</span>
+  </h3>
+
+  <div class="cards">
+
+    <div class="card">
+      <h2>macOS <span class="os">11+ · Apple Silicon / Intel</span></h2>
+      <p>
+        <span class="t-zh">解压后把 EchoLingo 拖进「应用程序」，双击打开。它会开自己的窗口，识别与翻译都在这个应用里跑，装好之后不用联网也能学。</span>
+        <span class="t-en">Unzip, drag EchoLingo into Applications, double-click. It opens its own window and runs recognition and translation inside the app — no network needed once installed.</span>
+        <span class="t-es">Descomprime, arrastra EchoLingo a Aplicaciones y haz doble clic. Abre su propia ventana y hace el reconocimiento y la traducción dentro de la app, sin red.</span>
+      </p>
+      <div class="dl">
+        <a class="btn primary" href="files/EchoLingo-macOS-arm64.zip" download>
+          Apple Silicon <small>M1–M4 · 约 490 MB</small>
+        </a>
+        <a class="btn" href="files/EchoLingo-macOS-x64.zip" download>
+          Intel <small>x64 · 约 500 MB</small>
+        </a>
+      </div>
+      <p class="alt">
+        <span class="t-zh">不确定哪种？点左上角  → 关于本机，看「芯片」一栏写着 Apple 还是 Intel。</span>
+        <span class="t-en">Not sure which one? Apple menu → About This Mac, check the “Chip” line.</span>
+        <span class="t-es">¿No sabes cuál? Menú Apple → Acerca de este Mac, mira «Chip».</span>
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Windows <span class="os">10 / 11 · x64</span></h2>
+      <p>
+        <span class="t-zh">解压到任意文件夹（比如 <code>D:\EchoLingo</code>），双击 <code>EchoLingo.exe</code>。不需要安装程序，也不会写注册表。</span>
+        <span class="t-en">Unzip anywhere (e.g. <code>D:\EchoLingo</code>) and run <code>EchoLingo.exe</code>. No installer, no registry writes.</span>
+        <span class="t-es">Descomprime en cualquier carpeta (p. ej. <code>D:\EchoLingo</code>) y ejecuta <code>EchoLingo.exe</code>. Sin instalador ni registro.</span>
+      </p>
+      <div class="dl">
+        <a class="btn primary" href="files/EchoLingo-Windows-x64.zip" download>
+          Windows x64 <small>.zip · 约 540 MB</small>
+        </a>
+      </div>
+      <p class="alt">
+        <span class="t-zh">解压后的文件夹别删，删了应用就没了（重新下载即可）。</span>
+        <span class="t-en">Keep the unzipped folder — deleting it removes the app (just download again).</span>
+        <span class="t-es">No borres la carpeta: si la borras, desaparece la app.</span>
+      </p>
+    </div>
+
+  </div>
+
+  <h3 class="group" id="helper">
+    <span class="t-zh">取流助手 · 只有取流，约 190–240 MB</span>
+    <span class="t-en">Stream helper — fetching only, ~190–240 MB</span>
+    <span class="t-es">Asistente de descarga — solo eso, ~190–240 MB</span>
+  </h3>
+
+  <p class="note">
+    <span class="t-zh">给<b>已经在用网页版</b>的人：网页版要导入 YouTube 或哔哩哔哩的链接，需要一个在本机跑的小工具。装一次、打开一次，之后你继续用网页版，每个链接都能直接导，不用先自己下载视频。它不带识别模型，所以小得多。</span>
+    <span class="t-en">For people <b>already using the web app</b>: importing a YouTube or Bilibili link needs a small helper running on your machine. Install it once, open it once, then keep using the web app and every link just works. It carries no recognition models, so it is much smaller.</span>
+    <span class="t-es">Para quien <b>ya usa la web</b>: importar un enlace de YouTube o Bilibili necesita un pequeño asistente local. Instálalo y ábrelo una vez; después sigue usando la web y cualquier enlace funcionará. No incluye modelos, por eso pesa mucho menos.</span>
+  </p>
+
+  <div class="cards">
+
+    <div class="card">
+      <h2>macOS <span class="os">11+ · Apple Silicon / Intel</span></h2>
+      <p>
+        <span class="t-zh">解压后把 <code>EchoLingoHelper</code> 拖进「应用程序」，双击打开一次。打开后它常驻菜单栏，本地取流服务留在 9871 端口待命；关掉窗口不退出。</span>
+        <span class="t-en">Unzip, drag <code>EchoLingoHelper</code> into Applications, double-click once. It stays in the menu bar and keeps the local fetcher on port 9871; closing the window does not quit it.</span>
+        <span class="t-es">Descomprime, arrastra <code>EchoLingoHelper</code> a Aplicaciones y abre una vez. Queda en la barra de menús y el servicio local escucha en el puerto 9871.</span>
+      </p>
+      <div class="dl">
+        <a class="btn primary" href="files/FetchdHelper-macOS-arm64.zip" download>
+          Apple Silicon <small>M1–M4 · 约 190 MB</small>
+        </a>
+        <a class="btn" href="files/FetchdHelper-macOS-x64.zip" download>
+          Intel <small>x64 · 约 200 MB</small>
+        </a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Windows <span class="os">10 / 11 · x64</span></h2>
+      <p>
+        <span class="t-zh">解压到任意文件夹，双击 <code>EchoLingoHelper.exe</code> 打开一次。它会在托盘里待命，网页版即可直接导链接。</span>
+        <span class="t-en">Unzip anywhere and run <code>EchoLingoHelper.exe</code> once. It waits in the tray and the web app can import links right away.</span>
+        <span class="t-es">Descomprime en cualquier carpeta y ejecuta <code>EchoLingoHelper.exe</code> una vez. Queda en la bandeja y la web ya puede importar enlaces.</span>
+      </p>
+      <div class="dl">
+        <a class="btn primary" href="files/FetchdHelper-Windows-x64.zip" download>
+          Windows x64 <small>.zip · 约 240 MB</small>
+        </a>
+      </div>
+    </div>
+
+  </div>
+
+  <h3>
+    <span class="t-zh">怎么用</span>
+    <span class="t-en">How it works</span>
+    <span class="t-es">Cómo funciona</span>
+  </h3>
+  <ol class="steps">
+    <li>
+      <span class="t-zh"><b>下载并打开</b>。如果 macOS 弹窗问是否允许网络连接，选允许（它只监听 127.0.0.1，别人连不进来）；没弹窗说明不需要。</span>
+      <span class="t-en"><b>Download and open it once.</b> macOS may ask about local network access — allow it (it only listens on 127.0.0.1).</span>
+      <span class="t-es"><b>Descárgalo y ábrelo una vez.</b> macOS puede pedir permiso de red local: acéptalo (solo escucha en 127.0.0.1).</span>
+    </li>
+    <li>
+      <span class="t-zh"><b>回到网页版</b>，点顶栏「链接导入」，粘贴 YouTube 或哔哩哔哩的链接。</span>
+      <span class="t-en"><b>Go back to the web app</b>, click “Import link” and paste a YouTube or Bilibili URL.</span>
+      <span class="t-es"><b>Vuelve a la web</b>, pulsa «Importar enlace» y pega una URL de YouTube o Bilibili.</span>
+    </li>
+    <li>
+      <span class="t-zh"><b>点「导入并开始」</b>。视频在本机取回后直接进识别学习，识别与翻译都在你的浏览器里完成。</span>
+      <span class="t-en"><b>Click “Import and start”.</b> The video is fetched locally and goes straight into study; recognition and translation happen in your browser.</span>
+      <span class="t-es"><b>Pulsa «Importar y empezar».</b> El vídeo se obtiene en local y entra directo al estudio; el reconocimiento y la traducción ocurren en tu navegador.</span>
+    </li>
+  </ol>
+
+  <div class="note">
+    <span class="t-zh"><b>它做什么、不做什么。</b>助手只做一件事：把你粘贴的那个视频取回本机，然后交给浏览器。它不收集数据、不联网上报、不开端口给外部访问，也不碰你电脑上别的东西。关掉它，网页版其余功能照常能用。</span>
+    <span class="t-en"><b>What it does and doesn’t do.</b> It fetches the video you pasted and hands it to your browser — nothing else. No telemetry, no external ports, no access to anything else on your machine. Close it and the rest of the web app still works.</span>
+    <span class="t-es"><b>Qué hace y qué no.</b> Solo obtiene el vídeo que pegaste y se lo pasa al navegador. Sin telemetría, sin puertos externos, sin tocar nada más de tu equipo. Si lo cierras, el resto de la web sigue funcionando.</span>
+  </div>
+
+  <h3>
+    <span class="t-zh">在 iPad 或安卓平板上用</span>
+    <span class="t-en">Using it on an iPad or Android tablet</span>
+    <span class="t-es">En un iPad o tableta Android</span>
+  </h3>
+  <p>
+    <span class="t-zh">如果这个网站已经部署了取流后端（见上），平板打开网址就能用，下面这段可以跳过。没部署时，平板装不了这个助手，但可以让平板直接用电脑上的它。在电脑上打开助手，菜单栏 → <b>共享 → 让平板访问（局域网）</b>，它会弹出一个像 <code>http://192.168.1.20:8731/</code> 的地址。平板连同一个 Wi-Fi，用浏览器（Safari / Chrome）打开这个地址就行，之后「链接导入」在平板上一样能用 —— 视频还是电脑取回、电脑转发。</span>
+    <span class="t-en">If this site already has the fetching backend deployed (see above), just open it on the tablet and skip this part. Otherwise: the tablet can’t install this helper, but it can use the one on your computer. Open the helper, then menu → <b>Share → Allow tablets (LAN)</b>; it shows an address like <code>http://192.168.1.20:8731/</code>. Join the same Wi-Fi on the tablet and open that address in Safari or Chrome — “Import link” works there too, with the computer still doing the fetching.</span>
+    <span class="t-es">Si este sitio ya tiene el backend desplegado (arriba), abre la web en la tableta y salta esto. Si no, la tableta no puede instalar el asistente, pero sí usar el de tu ordenador. Ábrelo y ve a <b>Compartir → Permitir tabletas (LAN)</b>; aparecerá una dirección como <code>http://192.168.1.20:8731/</code>. Conéctate al mismo Wi-Fi y ábrela en Safari o Chrome: «Importar enlace» también funciona ahí.</span>
+  </p>
+  <ul class="reqs">
+    <li><span class="t-zh"><b>识别会慢一些。</b>平板浏览器在 http 地址上不给共享内存，识别只能单线程跑。长的视频建议先在电脑上识别完，平板上用「继续学习」接着看。</span><span class="t-en"><b>Recognition is slower there.</b> Plain http gives no shared memory, so it runs single-threaded. For long videos, run recognition on the computer first, then pick it up on the tablet.</span><span class="t-es"><b>El reconocimiento va más lento.</b> En http no hay memoria compartida: corre en un solo hilo. Para vídeos largos, reconócelos primero en el ordenador.</span></li>
+    <li><span class="t-zh"><b>收藏和进度按设备分开存。</b>平板看过的和电脑上看过的各记各的，不会同步。</span><span class="t-en"><b>Bookmarks and progress stay per device.</b> They are not synced between tablet and computer.</span><span class="t-es"><b>Favoritos y progreso son por dispositivo.</b> No se sincronizan.</span></li>
+    <li><span class="t-zh"><b>只在同一个 Wi-Fi 内可见。</b>退出共享、或关掉助手，平板立刻打不开；外网访问不到。</span><span class="t-en"><b>Visible on your Wi-Fi only.</b> Turn sharing off or quit the helper and the tablet loses access; it is not reachable from the internet.</span><span class="t-es"><b>Solo visible en tu Wi-Fi.</b> Si desactivas el uso compartido o cierras el asistente, la tableta pierde el acceso.</span></li>
+  </ul>
+
+  <h3>
+    <span class="t-zh">第一次打开被系统拦住了？</span>
+    <span class="t-en">Blocked the first time you open it?</span>
+    <span class="t-es">¿El sistema lo bloqueó la primera vez?</span>
+  </h3>
+
+  <details>
+    <summary>
+      <span class="t-zh">macOS：「无法验证开发者」/「已损坏，无法打开」</span>
+      <span class="t-en">macOS: “unidentified developer” / “is damaged”</span>
+      <span class="t-es">macOS: «desarrollador no identificado» / «está dañado»</span>
+    </summary>
+    <p>
+      <span class="t-zh">这个包没有买 Apple 的开发者证书（每年 99 美元），所以系统会拦。三种解法，任选一种：</span>
+      <span class="t-en">This build isn’t signed with a paid Apple certificate (US$99/year), so macOS blocks it. Any one of these works:</span>
+      <span class="t-es">Esta versión no está firmada con un certificado de Apple (99 US$/año), así que macOS la bloquea. Cualquiera de estas opciones sirve:</span>
+    </p>
+    <p>
+      <span class="t-zh"><b>macOS 15 及以上没有再右键「打开」这条路了</b>，按下面来：先点「完成」把拦窗关掉（别点「移到废纸篓」），然后去系统设置放行。</span>
+      <span class="t-en"><b>macOS 15 and later dropped the right-click → Open trick.</b> Click “Done” to close the warning (never “Move to Trash”), then allow it in System Settings.</span>
+      <span class="t-es"><b>macOS 15 y posteriores ya no permiten el truco de clic derecho → Abrir.</b> Pulsa «Listo» para cerrar el aviso (nunca «Mover a la papelera») y autorízalo en Ajustes.</span>
+    </p>
+    <ul>
+      <li><span class="t-zh"><b>系统设置 → 隐私与安全性</b>，往下滚到「安全性」，会有一行「已阻止打开 EchoLingo，因为它不是来自已验证的开发者」，点<b>「仍要打开」</b>，输入密码或指纹；然后再双击一次 App，弹窗里点「打开」。</span><span class="t-en"><b>System Settings → Privacy &amp; Security</b>, scroll to “Security”, find “EchoLingo was blocked from use because it is not from an identified developer”, click <b>Open Anyway</b>, authenticate, then double-click the app once more and choose “Open”.</span><span class="t-es"><b>Ajustes → Privacidad y seguridad</b>, baja hasta «Seguridad», busca «Se bloqueó el uso de EchoLingo…» y pulsa <b>Abrir igualmente</b>, autentícate y vuelve a abrir la app.</span></li>
+      <li><span class="t-zh">或者，终端里一行就够（把路径换成你的实际位置，在「应用程序」里就照抄）：<code>xattr -dr com.apple.quarantine /Applications/EchoLingo.app</code> —— 之后双击直接开，不再问。</span><span class="t-en">Or run one line in Terminal (adjust the path; copy as-is if it sits in Applications): <code>xattr -dr com.apple.quarantine /Applications/EchoLingo.app</code> — afterwards it just opens.</span><span class="t-es">O ejecuta una línea en Terminal (ajusta la ruta): <code>xattr -dr com.apple.quarantine /Applications/EchoLingo.app</code> — luego abre sin preguntar.</span></li>
+      <li><span class="t-zh">旧系统（macOS 14 及以下）还能用：<b>右键点图标 → 打开 → 再点「打开」</b>。</span><span class="t-en">On older systems (macOS 14 and below): <b>right-click the icon → Open → Open</b>.</span><span class="t-es">En versiones antiguas (macOS 14 o menos): <b>clic derecho → Abrir → Abrir</b>.</span></li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>
+      <span class="t-zh">Windows：「Windows 已保护你的电脑」</span>
+      <span class="t-en">Windows: “Windows protected your PC”</span>
+      <span class="t-es">Windows: «Windows protegió tu PC»</span>
+    </summary>
+    <p>
+      <span class="t-zh">这是 SmartScreen 对「没有代码签名的新程序」的默认提示，和程序本身无关。点<b>「更多信息」→「仍要运行」</b>即可。如果解压后 <code>EchoLingo.exe</code> 被杀软删了，把解压目录加进白名单再解压一次。</span>
+      <span class="t-en">SmartScreen shows this for any new unsigned program; it says nothing about the app itself. Click <b>More info → Run anyway</b>. If your antivirus removes <code>EchoLingo.exe</code>, whitelist the folder and unzip again.</span>
+      <span class="t-es">SmartScreen lo muestra con cualquier programa nuevo sin firma. Pulsa <b>Más información → Ejecutar de todas formas</b>. Si el antivirus borra <code>EchoLingo.exe</code>, añade la carpeta a excepciones y descomprime de nuevo.</span>
+    </p>
+  </details>
+
+  <h3>
+    <span class="t-zh">系统要求</span>
+    <span class="t-en">Requirements</span>
+    <span class="t-es">Requisitos</span>
+  </h3>
+  <ul style="color:var(--fg-2);font-size:14.5px">
+    <li><span class="t-zh">macOS 11 及以上，或 Windows 10 / 11（64 位）</span><span class="t-en">macOS 11+ or Windows 10/11 (64-bit)</span><span class="t-es">macOS 11+ o Windows 10/11 (64 bits)</span></li>
+    <li><span class="t-zh">能正常打开 YouTube / 哔哩哔哩（需要什么网络环境，取决于你自己）</span><span class="t-en">Working access to YouTube / Bilibili</span><span class="t-es">Acceso funcional a YouTube / Bilibili</span></li>
+    <li><span class="t-zh">想导入受限视频时，本机 Chrome 里登录过对应网站，成功率更高</span><span class="t-en">For restricted videos, being signed in to that site in Chrome improves the odds</span><span class="t-es">Para vídeos restringidos, tener sesión iniciada en Chrome ayuda</span></li>
+    <li><span class="t-zh">运行助手本身不占资源（空闲时约 80 MB 内存，取流时才用 CPU 和带宽）</span><span class="t-en">The helper is idle-light (~80 MB RAM; CPU and bandwidth only while fetching)</span><span class="t-es">El asistente apenas consume recursos (~80 MB en reposo)</span></li>
+    <li><span class="t-zh">只下一次：安装包约 0.5 GB，解开后占约 1 GB（识别与翻译的模型都在里面，装好后取流和识别都不再联网）</span><span class="t-en">One-time download: ~0.5 GB zipped, ~1 GB unpacked — the speech and translation models ship inside, so nothing is fetched at runtime</span><span class="t-es">Descarga única: ~0,5 GB comprimido, ~1 GB descomprimido — los modelos van incluidos</span></li>
+  </ul>
+
+  <footer>
+    <span>EchoLingo 取流助手</span>
+    <span>yt-dlp · ffmpeg（随包分发，各自遵循其许可证）</span>
+    <a href="../index.html"><span class="t-zh">返回首页</span><span class="t-en">Home</span><span class="t-es">Inicio</span></a>
+  </footer>
+
+</div>
+<script>
+(function () {
+  var lang = document.documentElement.dataset.lang || 'zh';
+  function paint() {
+    document.querySelectorAll('[data-set-lang]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.setLang === lang));
+    });
+  }
+  document.querySelectorAll('[data-set-lang]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      lang = b.dataset.setLang;
+      var h = document.documentElement;
+      h.dataset.lang = lang;
+      h.lang = lang === 'zh' ? 'zh-CN' : lang;
+      try { localStorage.setItem('echolingo.site.lang', lang); } catch (e) {}
+      paint();
+    });
+  });
+  paint();
+})();
+</script>
+<script>
+/* 打包进桌面版时，这一页会跟着站点一起发出去（site/download/index.html）。
+   但那时用户手里已经就是「取流助手」本体，不该再让他下载一遍 —— 认 Electron UA 后
+   把下载按钮收起来，只留一句说明。网页版访问时 UA 不含 Electron，一切照旧。 */
+(function () {
+  if (!/\bElectron\//.test(navigator.userAgent)) return;
+  document.querySelectorAll('.dl').forEach(function (n) { n.hidden = true; });
+  var box = document.createElement('p');
+  box.className = 'stack-note';
+  box.style.cssText = 'margin:18px 0 6px;padding:14px 16px;border:1px solid var(--line);'
+    + 'border-radius:12px;background:var(--panel);color:var(--fg-2);font-size:14.5px';
+  box.innerHTML = '<span class="t-zh">你现在打开的<b>就是</b>取流助手本体，不需要再下载：回到窗口里点顶栏「链接导入」就能用。</span>'
+    + '<span class="t-en">You are <b>already</b> inside the fetcher app — no download needed. Go back to the window and click “Link import” in the top bar.</span>'
+    + '<span class="t-es">Ya estás <b>dentro</b> de la app descargadora: no hace falta descargar nada. Vuelve a la ventana y pulsa «Importar enlace» arriba.</span>';
+  var host = document.querySelector('.wrap') || document.body;
+  var h1 = host.querySelector('h1');
+  if (h1 && h1.nextSibling) h1.parentNode.insertBefore(box, h1.nextSibling);
+  else host.insertBefore(box, host.firstChild);
+})();
+</script>
+
+  <script>
+  /* 安装包不进站点仓库（2.1GB），线上从 GitHub Release 取；本地起 server.js 时仍用 files/ 相对路径。 */
+  (function () {
+    var host = location.hostname;
+    var local = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '';
+    if (local) return;
+    var RELEASE = 'https://github.com/KJHAJKSLFHA/echolingo/releases/latest/download/';
+    document.querySelectorAll('a[href^="files/"]').forEach(function (a) {
+      a.href = RELEASE + a.getAttribute('href').slice('files/'.length);
+    });
+  })();
+  </script>
+</body>
+</html>

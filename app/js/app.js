@@ -2,7 +2,7 @@
 
 import {
   $, $$, el, fmtTime, clamp, escapeHtml, hashStr, debounce,
-  toast, download, openDB, idbAll, idbPut, idbDelete,
+  toast, download, openDB, idbAll, idbPut, idbDelete, idbClear,
 } from './util.js';
 import { initLang, setLang, getLang, t, onLangChange, nextLang, LANG_SHORT } from './i18n.js';
 import {
@@ -19,7 +19,7 @@ import * as SRS from './srs.js';
 
 // 与 index.html 里的 window.__ECHOLINGO_VER__ 必须保持一致。
 // 改这两个值时请一起改（sw.js 的 VERSION 也顺手升一级）。
-export const APP_VER = '3.13.0';
+export const APP_VER = '3.17.0';
 
 /* ============================ 状态 ============================ */
 
@@ -49,10 +49,14 @@ const S = {
     voiceEn: '', voiceEs: '', ttsRate: 0.95, fontSize: 18, autoScroll: true,
     markWords: true, transMode: 'local', wordTs: 'auto', autoRun: true,
     karaoke: true, asrModel: '',
+    // 查词时暂停；是否恢复由「打开前是否在播 + 中途是否自己暂停」决定，不无条件续播
+    pauseOnLookup: true,
     // 右侧两列可以分别收起。练听力时不想被英文剧透就关掉英文，
     // 只想听不想看中文就关掉中文 —— 比把译文弄模糊更干脆。
     // showMid 是西语模式多出来的「英文翻译」那一行，英语模式下没有这一行。
     showEn: true, showMid: true, showZh: true,
+    // 复习：三选一；语言列与自动朗读独立记忆
+    reviewShowZh: true, reviewShowEn: true, reviewAutoSpeak: true,
     // 学习语言模式（左上角 English / Español）：决定识别模型与翻译链。
     mode: 'en',
     // 画面烧录字幕遮罩。默认关：不改变用户已有的使用习惯。
@@ -62,6 +66,22 @@ const S = {
   wordCardFor: null,
   rafId: 0,
   lastUserScroll: 0,
+  // 用户主动滚动后暂停跟随；只有点「回到当前句」才恢复
+  followPaused: false,
+  // 词卡打开前的播放状态与「用户是否在中途自己暂停过」
+  wordCardPause: null,
+  // 最近学习记录与当前会话主键
+  recent: [],
+  sessionKey: '',
+  mediaPending: false,
+  pendingHandleKey: null,
+  pendingHandleHasApi: false,
+  // 当前真实任务的取消句柄与失败信息
+  jobAbort: null,
+  lastFail: null,
+  lastStatus: null,
+  resumeAt: 0,
+  jobStage: null,
   // 复习会话。queue 在开始时一次定好，中途答对答错都不会往里加东西 ——
   // 边复习边追加会让「还剩几条」变成一直在变的数字，看不到头。
   review: null,        // { queue, idx, ok, bad, revealed, tab, lang }
@@ -69,18 +89,144 @@ const S = {
 
 const LS_KEY = 'echolingo.settings.v1';
 const LS_THEME = 'echolingo.theme';
+const LS_SESSION = 'echolingo.session.v1';
+const LS_RECENT = 'echolingo.recent.v1';
+const LS_SESSION_PREFIX = 'echolingo.session.v2:';
+const RECENT_MAX = 8;
+const SESSION_BYTES_MAX = 3_500_000;   // 单条字幕/词时间戳的保守上限
+const RECENT_BYTES_MAX = 12_000_000;   // 所有记录的本地预算
 
 /* ============================ 启动 ============================ */
+
+/* ============================ 激活（一次性付费 · 永久可用） ============================ */
+// 校验完全在本机完成（app/js/license.js），不联网、不上报。填错只提示，不锁死。
+const SELLER_WX = 'Orion';   // ← 显示在激活窗里的微信号
+let LIC_ON = false;
+
+function licenseOk() {
+  try { return !!(window.ECLicense && ECLicense.state().active); } catch (e) { return false; }
+}
+
+/** 未激活时挡住功能并弹出激活窗；返回是否已激活 */
+function needLicense() {
+  if (licenseOk()) return true;
+  openGate();
+  toast(t('gate.need'));
+  return false;
+}
+
+function openGate() {
+  const g = $('#gateOverlay');
+  if (!g) return;
+  g.hidden = false;
+  const c = $('#gateContact');
+  if (c) c.textContent = t('gate.contact').replace('{wx}', SELLER_WX);
+  const box = $('#gateCode');
+  if (box) setTimeout(() => box.focus(), 80);
+}
+
+function closeGate() {
+  const g = $('#gateOverlay');
+  if (g) g.hidden = true;
+}
+
+function formatCode(raw) {
+  const s = String(raw || '').toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 20);
+  return s.replace(/(.{4})/g, '$1-').replace(/-$/, '');
+}
+
+function initLicense() {
+  LIC_ON = licenseOk();
+  if (LIC_ON) { closeGate(); return; }
+  openGate();
+
+  const box = $('#gateCode');
+  const go = $('#gateGo');
+  const note = $('#gateNote');
+  if (!box || !go || !note) return;
+
+  const say = (text, cls) => {
+    note.textContent = text;
+    note.classList.toggle('bad', cls === 'bad');
+    note.classList.toggle('ok', cls === 'ok');
+  };
+
+  const submit = () => {
+    const code = formatCode(box.value);
+    if (!code || code.replace(/-/g, '').length < 20) {
+      box.setAttribute('aria-invalid', 'true');
+      say(t('gate.invalid'), 'bad');
+      return;
+    }
+    go.disabled = true;
+    const label = go.textContent;
+    go.textContent = t('gate.activating');
+    const r = window.ECLicense ? ECLicense.activate(code) : { ok: false, reason: 'invalid' };
+    if (r.ok) {
+      LIC_ON = true;
+      box.removeAttribute('aria-invalid');
+      say(t('gate.ok'), 'ok');
+      setTimeout(() => {
+        closeGate();
+        toast(t('gate.ok'));
+        go.disabled = false;
+        go.textContent = label;
+      }, 420);
+      return;
+    }
+    go.disabled = false;
+    go.textContent = label;
+    box.setAttribute('aria-invalid', 'true');
+    say(r.reason === 'storage' ? t('gate.storage') : t('gate.invalid'), 'bad');
+  };
+
+  // 弹窗自己的语言切换：客户扫完码看不懂中文，就地换语言
+  const langBtns = Array.from(document.querySelectorAll('[data-gate-lang]'));
+  const paintLang = () => {
+    langBtns.forEach((b) => b.classList.toggle('active', b.dataset.gateLang === getLang()));
+    const c = $('#gateContact');
+    if (c) c.textContent = t('gate.contact').replace('{wx}', SELLER_WX);
+  };
+  langBtns.forEach((b) => {
+    b.addEventListener('click', () => {
+      setLang(b.dataset.gateLang);
+      paintLang();
+      if (note.getAttribute('aria-live') === null) note.setAttribute('aria-live', 'polite');
+    });
+  });
+  // 换语言后把提示回到「格式说明」，免得残留上一种语言的报错
+  onLangChange(() => { paintLang(); note.classList.remove('ok', 'bad'); note.textContent = t('gate.note'); });
+  paintLang();
+
+  go.addEventListener('click', submit);
+  box.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); submit(); }
+  });
+  box.addEventListener('input', () => {
+    const pos = box.selectionStart;
+    const before = box.value.length;
+    box.value = formatCode(box.value);
+    const after = box.value.length;
+    const next = Math.max(0, pos + (after - before));
+    try { box.setSelectionRange(next, next); } catch (e) {}
+    box.removeAttribute('aria-invalid');
+  });
+  box.addEventListener('paste', () => setTimeout(() => { box.value = formatCode(box.value); }, 0));
+}
+
 
 async function boot() {
   initLang();
   loadSettings();
+  initLicense();
   applyTheme();
+  S.recent = loadRecent();
   TTS.initTTS();
   bindUI();
   registerSW();
   await openStores();
   await refreshFavCounts();
+  await refreshRecentEntries();
 
   DICT.initDict(() => { MS.dict = { state: 'loading', text: t('status.dictLoading') }; renderStatus(); })
     .then(async (info) => {
@@ -101,8 +247,10 @@ async function boot() {
   updateNetStatus();
   window.addEventListener('online', updateNetStatus);
   window.addEventListener('offline', updateNetStatus);
+  window.addEventListener('pagehide', () => { if (S.sessionKey) persistSession(); });
   startTick();
   setupLangUI();
+  renderRecent();
   onLangChange(() => { setupLangUI(); renderModelOptions(); renderStatus(); rerenderAll(); applyLangView(); applyDropzoneTitle(); });
 
   // 空闲时把模型读进内存，这样「导入视频即出字幕」不用再等模型冷启动
@@ -397,6 +545,15 @@ function loadSettings() {
   $('#chkWordMark').checked = st.markWords;
   $('#chkAutoRun').checked = st.autoRun !== false;
   $('#chkKaraoke').checked = st.karaoke !== false;
+  const chkPause = $('#chkPauseLookup');
+  if (chkPause) chkPause.checked = st.pauseOnLookup !== false;
+  const chkThird = $('#chkThirdLang');
+  if (chkThird) chkThird.checked = st.showMid !== false;
+  const chkFollow = $('#chkAutoScroll2');
+  if (chkFollow) chkFollow.checked = st.autoScroll !== false;
+  $('#rvZhToggle')?.classList.toggle('on', st.reviewShowZh !== false);
+  $('#rvEnToggle')?.classList.toggle('on', st.reviewShowEn !== false);
+  $('#rvAutoToggle')?.classList.toggle('on', st.reviewAutoSpeak !== false);
   $('#setTransMode').value = st.transMode;
   $('#setWordTs').value = st.wordTs;
   document.documentElement.style.setProperty('--sub-font', st.fontSize + 'px');
@@ -515,6 +672,9 @@ function applyModeView() {
 /** 拖拽区标题跟着学习语言走 —— 英文模式下说「拖英语视频」，
  *  西班牙模式下说「拖西班牙语视频」，别让用户拖错文件进来白等一轮识别。 */
 function applyDropzoneTitle() {
+  renderRecent();
+  // 空状态里的「选择文件 / 继续上次」也要跟着界面语言刷新
+  if (!S.cues.length && !S.mediaPending) renderSubs();
   // 注意：选择器不能写死 [data-i18n="dz.title"]。这个函数自己会把 dataset.i18n
   // 改成 dz.titleEs，改完那个选择器就再也选不中它了 —— 于是「es → en」切回来时
   // 静默什么都不做，标题永远停在「把西班牙语视频拖进来」。两个 key 都要能选中。
@@ -617,13 +777,471 @@ function rerenderAll() {
     : (S.cues.length ? t('top.redo') : t('top.start')));
 }
 
+/* ============================ 本地学习记录 ============================
+   只保存「用户本机可重建的东西」：文件名、识别语言、字幕与译文、播放位置、
+   真实处理状态。视频 Blob 本身不存 —— 浏览器也不允许网页记住本机文件路径。
+   重新打开时能恢复字幕与位置，但要用户再选一次同一个文件，这是诚实的限制。
+   收藏/复习仍走原来的 IndexedDB 两个 store，这里不碰它们。
+==================================================================== */
+
+const safeReadJSON = (key, fallback) => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch { return fallback; }
+};
+
+function loadSession(key = null) {
+  // v2：每个 key 一条独立 payload；旧版单一 payload 仍可读，避免升级即丢。
+  const storeKey = key ? LS_SESSION_PREFIX + key : null;
+  let v = storeKey ? safeReadJSON(storeKey, null) : null;
+  if (!v) v = safeReadJSON(LS_SESSION, null);
+  if (key && v && v.key && v.key !== key) return null;
+  if (!v || typeof v !== 'object' || !v.key) return null;
+  return {
+    key: String(v.key),
+    name: String(v.name || ''),
+    mode: v.mode === 'es' ? 'es' : 'en',
+    recogLang: v.recogLang === 'es' ? 'es' : (v.recogLang === 'en' ? 'en' : null),
+    cues: Array.isArray(v.cues) ? v.cues.filter((c) => c && Number.isFinite(+c.start)) : [],
+    at: Number.isFinite(+v.at) ? Math.max(0, +v.at) : 0,
+    status: ['ready', 'partial', 'failed', 'processing'].includes(v.status) ? v.status : 'partial',
+    updatedAt: Number(v.updatedAt) || 0,
+  };
+}
+
+function loadRecent() {
+  const list = safeReadJSON(LS_RECENT, []);
+  return Array.isArray(list) ? list.filter((r) => r && r.key).slice(0, RECENT_MAX) : [];
+}
+
+/** 最近记录 + 句柄是否存在。句柄只做存在性标记，不在这里请求权限。 */
+async function refreshRecentEntries() {
+  if (!S.db) return;
+  try {
+    const rows = await idbAll(S.db, 'handles');
+    const keys = new Set(rows.map((r) => r.key));
+    S.recent = S.recent.map((r) => ({ ...r, hasHandle: keys.has(r.key) }));
+  } catch { /* IndexedDB 不可用时保持原样 */ }
+  renderContinuePop();
+}
+
+function sessionIdFor(file) {
+  // 文件名 + 大小 + 最后修改时间：同一文件重选时能对上，不同文件不会撞车。
+  // 不依赖路径（浏览器根本不提供），也不假装它是持久句柄。
+  return `${file.name}|${file.size}|${file.lastModified || 0}`;
+}
+
+const finite = (v) => Number.isFinite(+v);
+
+/** 只保留可重建 UI 需要的字段；words 是 Whisper 的真实逐词时间戳，
+ *  必须原样保留，否则恢复后会被按句长估算，跟读高亮就失真。 */
+function cueForStorage(c) {
+  const out = {
+    start: +c.start, end: +c.end, text: c.text || '', zh: c.zh || '', mid: c.mid || '',
+  };
+  if (Array.isArray(c.words) && c.words.length) {
+    out.words = c.words
+      .filter((w) => w && finite(w.s) && finite(w.e))
+      .map((w) => ({ w: String(w.w || ''), s: +w.s, e: +w.e }));
+  }
+  if (c.noAudio) out.noAudio = true;
+  return out;
+}
+
+function persistSession({ status } = {}) {
+  if (!S.sessionKey) return;
+  const payload = {
+    key: S.sessionKey,
+    name: S.name || '',
+    mode: getMode(),
+    recogLang: S.recogLang || null,
+    cues: S.cues.map(cueForStorage),
+    // 只有在真的有媒体、且已经读到元数据时才用 currentTime；
+    // 否则保留恢复时的位置（restorePositionOnLoad 之前 currentTime 还是 0）。
+    at: (S.file && $('#player').readyState >= 1)
+      ? Math.max(0, +$('#player').currentTime || 0)
+      : Math.max(0, +S.resumeAt || 0),
+    status: status || S.lastStatus || 'partial',
+    updatedAt: Date.now(),
+  };
+  const json = JSON.stringify(payload);
+  const storeKey = LS_SESSION_PREFIX + payload.key;
+  let stored = false;
+  try {
+    if (json.length <= SESSION_BYTES_MAX) {
+      localStorage.setItem(storeKey, json);
+      // 新格式写成功后才清旧单条，避免两边都不是最新
+      try { localStorage.removeItem(LS_SESSION); } catch { /* 忽略 */ }
+      stored = true;
+    }
+  } catch (e) {
+    // 配额：只删本应用最旧的会话副本，不动收藏/其它站点数据
+    stored = evictOldestSessions(payload.key);
+    if (stored) { try { localStorage.setItem(storeKey, json); stored = true; } catch { stored = false; } }
+  }
+  if (!stored) {
+    // 放不下就诚实降级：不声明「可恢复字幕」，只保留可重选元数据
+    payload.cues = [];
+    const small = JSON.stringify(payload);
+    try { localStorage.setItem(LS_SESSION, small); } catch { /* 隐私模式 */ }
+  }
+  S.lastStatus = payload.status;
+  const entry = {
+    key: payload.key, name: payload.name, mode: payload.mode,
+    n: payload.cues.length, at: payload.at, status: payload.status,
+    recoverable: stored || payload.cues.length > 0, updatedAt: payload.updatedAt,
+  };
+  S.recent = [entry, ...S.recent.filter((r) => r.key !== entry.key)].slice(0, RECENT_MAX);
+  trimRecentBudget();
+  saveRecentIndex();
+  renderRecent();
+}
+
+function saveRecentIndex() {
+  try { localStorage.setItem(LS_RECENT, JSON.stringify(S.recent)); } catch { /* 忽略 */ }
+}
+
+/** 单条会话已各自限长；这里再按总字节数从最旧开始丢弃**会话副本**，
+ *  保留目录项并标成不可恢复，绝不假装还能恢复。 */
+function trimRecentBudget() {
+  const keys = S.recent.map((r) => r.key).reverse();   // 最旧在前
+  let total = 0;
+  for (const r of S.recent) {
+    const raw = localStorage.getItem(LS_SESSION_PREFIX + r.key);
+    total += raw ? raw.length : 0;
+  }
+  for (const key of keys) {
+    if (total <= RECENT_BYTES_MAX) break;
+    const raw = localStorage.getItem(LS_SESSION_PREFIX + key);
+    if (!raw) continue;
+    total -= raw.length;
+    try { localStorage.removeItem(LS_SESSION_PREFIX + key); } catch { /* 忽略 */ }
+  deleteHandle(key);
+    const entry = S.recent.find((r) => r.key === key);
+    if (entry) { entry.recoverable = false; entry.n = 0; }
+  }
+}
+
+function evictOldestSessions(keepKey) {
+  const keys = S.recent.map((r) => r.key).filter((k) => k !== keepKey);
+  for (const key of keys.reverse()) {
+    try {
+      if (localStorage.getItem(LS_SESSION_PREFIX + key)) {
+        localStorage.removeItem(LS_SESSION_PREFIX + key);
+        const entry = S.recent.find((r) => r.key === key);
+        if (entry) { entry.recoverable = false; entry.n = 0; }
+        saveRecentIndex();
+        return true;
+      }
+    } catch { /* 忽略 */ }
+  }
+  return false;
+}
+
+function removeRecent(key) {
+  S.recent = S.recent.filter((r) => r.key !== key);
+  try { localStorage.setItem(LS_RECENT, JSON.stringify(S.recent)); } catch { /* 忽略 */ }
+  try { localStorage.removeItem(LS_SESSION_PREFIX + key); } catch { /* 忽略 */ }
+  const cur = loadSession();
+  if (cur && cur.key === key) {
+    try { localStorage.removeItem(LS_SESSION); } catch { /* 忽略 */ }
+    if (S.sessionKey === key && !S.file) clearRestoredSession();
+  }
+  renderRecent();
+  toast(t('dz.recentRemoved'));
+}
+
+function clearRestoredSession() {
+  S.pendingHandleKey = null;
+  S.cues = [];
+  S.activeIdx = -1;
+  S.sessionKey = '';
+  S.mediaPending = false;
+  S.resumeAt = 0;
+  renderSubs();
+  renderMediaNotice();
+}
+
+async function clearAllHistory() {
+  S.recent = [];
+  S.sessionKey = '';
+  S.resumeAt = 0;
+  try {
+    localStorage.removeItem(LS_RECENT);
+    localStorage.removeItem(LS_SESSION);
+    for (const k of Object.keys(localStorage)) {
+      if (k.startsWith(LS_SESSION_PREFIX)) localStorage.removeItem(k);
+    }
+    if (S.db) await idbClear(S.db, 'handles');
+  } catch { /* 忽略 */ }
+  if (!S.file) { S.cues = []; renderSubs(); }
+  renderRecent();
+  renderMediaNotice();
+  toast(t('set.recentClearDone'));
+}
+
+/** 右侧空状态里的紧凑记录入口：只列前三条，真实状态；没有就不画。 */
+/* ============================ 顶栏「继续学习」 ============================
+   弹层只读真实本地记录；没有记录时按钮仍可见，并解释为什么是空的。
+   选择一条记录时：有文件句柄且已授权 → 直接重开原文件；
+   未授权 → 用户明确点「授权并继续」才请求权限；不支持/拒绝 → 退回复选文件。
+========================================================================= */
+
+function continueStatusText(r) {
+  const st = r.status;
+  if (st === 'ready') return t('continue.statusReady');
+  if (st === 'processing') return t('continue.statusProcessing');
+  if (st === 'failed') return t('continue.statusFailed');
+  if (st === 'partial') return t('continue.statusPartial');
+  return r.n ? t('continue.statusPartial') : t('continue.statusProcessing');
+}
+
+function renderContinuePop() {
+  const list = $('#continueList');
+  const btn = $('#btnContinue');
+  if (!list) return;
+  const count = S.recent.length;
+  const badge = $('#continueCount');
+  if (badge) { badge.hidden = !count; badge.textContent = String(count); }
+  if (btn) btn.setAttribute('aria-label', t('continue.title') + (count ? ` (${t('continue.count', { n: count })})` : ''));
+  if (!count) {
+    list.innerHTML = `<div class="cp-empty">${escapeHtml(t('continue.empty'))}` +
+      `<div><label class="btn btn-sm" for="fileVideo">${escapeHtml(t('dz.choose'))}</label></div></div>`;
+    return;
+  }
+  list.innerHTML = S.recent.map((r) => {
+    const state = ['ready', 'processing', 'failed'].includes(r.status) ? r.status : 'partial';
+    const meta = r.n
+      ? t('continue.savedAt', { n: r.n, t: fmtTime(r.at || 0) })
+      : '';
+    return `<div class="cp-item" data-key="${escapeHtml(r.key)}">` +
+      `<button class="cp-open" type="button" data-act="open" data-key="${escapeHtml(r.key)}"` +
+      ` title="${escapeHtml(t('dz.recentOpen'))}">` +
+      `<span class="cp-name">${escapeHtml(r.name || r.key)}</span>` +
+      `<span class="cp-meta">${[
+        meta, continueStatusText(r),
+        r.hasHandle ? t('continue.canReopen') : t('continue.needReselect'),
+      ].filter(Boolean).map(escapeHtml).join(' · ')}</span>` +
+      `</button>` +
+      `<span class="cp-state ${state}">${escapeHtml(r.mode === 'es' ? 'ES' : 'EN')}</span>` +
+      `<button class="icon-btn cp-remove" type="button" data-act="remove" data-key="${escapeHtml(r.key)}"` +
+      ` title="${escapeHtml(t('continue.remove'))}" aria-label="${escapeHtml(t('continue.remove'))}">×</button>` +
+      `</div>`;
+  }).join('');
+}
+
+function positionContinuePop() {
+  const pop = $('#continuePop');
+  const btn = $('#btnContinue');
+  if (!pop || !btn || pop.hidden) return;
+  if (window.matchMedia('(max-width: 640px), (pointer: coarse)').matches) return; // CSS sheet
+  const r = btn.getBoundingClientRect();
+  const w = pop.offsetWidth || 420;
+  const left = clamp(r.left, 8, Math.max(8, window.innerWidth - w - 8));
+  pop.style.left = left + 'px';
+  pop.style.top = (r.bottom + 6) + 'px';
+}
+
+function openContinuePop() {
+  const pop = $('#continuePop');
+  const btn = $('#btnContinue');
+  if (!pop || !btn) return;
+  renderContinuePop();
+  pop.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+  positionContinuePop();
+  const first = pop.querySelector('[data-act="open"]') || pop.querySelector('label[for="fileVideo"]');
+  first?.focus({ preventScroll: true });
+}
+
+function closeContinuePop({ returnFocus = true } = {}) {
+  const pop = $('#continuePop');
+  const btn = $('#btnContinue');
+  if (!pop || pop.hidden) return;
+  pop.hidden = true;
+  btn?.setAttribute('aria-expanded', 'false');
+  if (returnFocus) btn?.focus({ preventScroll: true });
+}
+
+function toggleContinuePop() {
+  const pop = $('#continuePop');
+  if (!pop) return;
+  if (pop.hidden) openContinuePop(); else closeContinuePop();
+}
+
+/** 记录是否有可复用的文件句柄。只有支持且成功存过才有。 */
+function hasFileHandleSupport() {
+  return typeof window.showOpenFilePicker === 'function'
+    && typeof indexedDB !== 'undefined';
+}
+
+/** 读取某个 key 的句柄。structured clone 失败（旧浏览器/清理过）就当作没有。 */
+async function loadHandle(key) {
+  // 测试钩子：只用于无头浏览器模拟句柄方法（默认不存在）
+  if (typeof window.__ecHandleTestHook === 'function') {
+    const h = window.__ecHandleTestHook(key);
+    if (h) return h;
+  }
+  if (!S.db) return null;
+  try {
+    const rows = await idbAll(S.db, 'handles');
+    const row = rows.find((x) => x.key === key);
+    return row?.handle || null;
+  } catch { return null; }
+}
+
+async function saveHandle(key, handle) {
+  if (!S.db || !handle) return false;
+  try {
+    await idbPut(S.db, 'handles', { key, handle, savedAt: Date.now() });
+    return true;
+  } catch { return false; }
+}
+
+async function deleteHandle(key) {
+  if (!S.db) return;
+  try { await idbDelete(S.db, 'handles', key); } catch { /* 忽略 */ }
+}
+
+/** 只在用户明确点击后调用。永远只请求 read，绝不请求目录或写权限。 */
+async function requestHandlePermission(handle) {
+  if (!handle) return 'unsupported';
+  if (typeof handle.queryPermission !== 'function') return 'unsupported';
+  try {
+    const state = await handle.queryPermission({ mode: 'read' });
+    if (state === 'granted') return 'granted';
+    if (!handle.requestPermission) return state === 'denied' ? 'denied' : 'prompt';
+    const asked = await handle.requestPermission({ mode: 'read' });
+    return asked === 'granted' ? 'granted' : (asked === 'denied' ? 'denied' : 'prompt');
+  } catch (e) {
+    console.warn('[continue] permission failed', e);
+    return 'error';
+  }
+}
+
+/** 用句柄恢复媒体。先校验身份/变化，再走与普通导入相同的恢复路径。 */
+async function reopenFromHandle(key) {
+  const session = loadSession(key);
+  const meta = S.recent.find((r) => r.key === key);
+  if (!session) { toast(t('dz.recentReselect')); return false; }
+  const handle = await loadHandle(key);
+  if (!handle) return false;
+  const state = await requestHandlePermission(handle);
+  if (state !== 'granted') {
+    toast(state === 'denied' ? t('continue.denied') : (state === 'unsupported' ? t('continue.unsupported') : t('continue.reopenFailed')));
+    return false;
+  }
+  let file;
+  try { file = await handle.getFile(); } catch { toast(t('continue.stale')); return false; }
+  const newKey = sessionIdFor(file);
+  if (newKey !== key) {
+    // 名称相同但大小/mtime 变了：不静默把旧字幕套到新文件上
+    const ok = await askModal({
+      title: t('continue.changed'),
+      body: t('continue.confirmChanged'),
+      okText: t('continue.grant'),
+      cancelText: t('common.cancel'),
+    });
+    if (!ok) return false;
+  }
+  await openVideoFile(file, { fromHandle: true, sessionKey: key });
+  closeContinuePop();
+  return true;
+}
+
+/** 选中一条真实记录：能直接重开就重开，否则显式进入复选文件路径。 */
+async function continueRecent(key) {
+  const meta = S.recent.find((r) => r.key === key);
+  if (!meta) return;
+  closeContinuePop({ returnFocus: false });
+  const handle = await loadHandle(key);
+  openRecent(key);           // 先恢复字幕与位置（不触发识别）
+  S.pendingHandleKey = handle ? key : null;
+  S.pendingHandleHasApi = !!(handle && typeof handle.queryPermission === 'function');
+  if (handle) {
+    // 有句柄也要用户明确同意后才 requestPermission；这里只展示「授权并继续」
+    renderMediaNotice();
+  }
+  closeContinuePop();
+}
+
+function renderRecent() {
+  renderContinuePop();
+}
+
+/** 恢复一条记录：只恢复字幕与位置，视频必须由用户重新选择。 */
+function openRecent(key) {
+  const session = loadSession(key);
+  if (!session || session.key !== key) { toast(t('dz.recentReselect')); return; }
+  S.sessionKey = key;
+  S.name = session.name;
+  S.recogLang = session.recogLang;
+  S.cues = session.cues.map((c, i) => ({ ...c, i }));
+  S.cues.forEach((c) => { delete c._wt; });
+  S.activeIdx = -1;
+  S.resumeAt = session.at;
+  S.lastStatus = session.status;
+  S.mediaPending = true;
+  S.file = null;
+  const player = $('#player');
+  if (player.src) URL.revokeObjectURL(player.src);
+  player.removeAttribute('src');
+  player.load();
+  $('#playerWrap').classList.remove('audio-only');
+  $('#audioBadge')?.remove();
+  $('#bigScreen').hidden = true;
+  $('#dropzone').classList.add('hide');
+  $('#playerBar').hidden = true;
+  $('#btnTranscribe').disabled = false;
+  setText('btnTranscribeLabel', S.cues.length ? t('top.redo') : t('top.start'));
+  renderSubs();
+  renderMediaNotice();
+  showFollowReturn(false);
+  refreshRecentEntries();
+}
+
+/** 恢复字幕但没有媒体时，播放器区域明确说明浏览器限制与下一步。 */
+function renderMediaNotice() {
+  const wrap = $('#playerWrap');
+  let n = $('#mediaNotice');
+  if (!S.mediaPending) { if (n) n.hidden = true; return; }
+  if (!n) {
+    // 兼容旧 HTML：节点不存在时才动态建，且一次建全，后续只改文本
+    n = el('div', { class: 'media-notice', id: 'mediaNotice' });
+    n.innerHTML = `<div class="media-notice-card"><h3></h3><p></p><div class="set-btns">` +
+      `<button class="btn" id="mediaGrant" type="button" hidden></button>` +
+      `<label class="btn" for="fileVideo"></label><label class="btn" for="fileVideo"></label></div></div>`;
+    wrap.appendChild(n);
+  }
+  if (!n.querySelector('h3')) return;
+  n.hidden = false;
+  n.querySelector('h3').textContent = t('media.needFile');
+  const pending = S.pendingHandleKey && S.pendingHandleKey === S.sessionKey
+    && S.pendingHandleHasApi !== false;
+  n.querySelector('p').textContent = pending ? t('continue.note') : t('media.needFileBody');
+  const [a, b] = n.querySelectorAll('label');
+  a.textContent = t('media.chooseFile');
+  b.textContent = t('media.pickAnother');
+  const grant = n.querySelector('#mediaGrant');
+  if (grant) {
+    grant.hidden = !pending;
+    if (pending) {
+      grant.textContent = t('continue.grant');
+      grant.onclick = () => reopenFromHandle(S.pendingHandleKey);
+    }
+  }
+}
+
 /* ============================ IndexedDB ============================ */
 
 async function openStores() {
   try {
-    S.db = await openDB('echolingo', 1, [
+    // v1 → v2 只新增句柄 store；words / sentences 原样保留，升级不迁移、不清空。
+    S.db = await openDB('echolingo', 2, [
       { name: 'words', keyPath: 'id' },
       { name: 'sentences', keyPath: 'id' },
+      { name: 'handles', keyPath: 'key' },
     ]);
     const words = await idbAll(S.db, 'words');
     const sents = await idbAll(S.db, 'sentences');
@@ -656,17 +1274,68 @@ function bindUI() {
   const player = $('#player');
 
   // --- 文件导入 ---
+  // 顶栏/空态的主导入：支持时走句柄选择器（保留句柄供「继续学习」），否则原生 input
+  $$('label[for="fileVideo"]').forEach((lab) => {
+    lab.addEventListener('click', async (ev) => {
+      if (!hasFileHandleSupport()) return;   // 原生 input
+      ev.preventDefault();
+      const ok = await openViaPicker();
+      if (!ok) $('#fileVideo').click();
+    });
+  });
   $('#fileVideo').addEventListener('change', (e) => {
     const f = e.target.files?.[0];
     if (f) openVideoFile(f);
     e.target.value = '';
   });
+
+  // --- 链接导入 ---
+  $('#btnUrlImport').addEventListener('click', () => { if (needLicense()) openUrlImport(); });
+  $('#urlClose').addEventListener('click', () => closeUrlImport());
+  $('#urlCancel').addEventListener('click', () => closeUrlImport());
+  $('#urlOverlay').addEventListener('click', (ev) => {
+    if (ev.target === $('#urlOverlay')) closeUrlImport();
+  });
+  $('#urlLookup').addEventListener('click', lookupUrl);
+  $('#urlField').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); lookupUrl(); }
+  });
+  $('#urlField').addEventListener('input', resetUrlLookup);
+  $('#urlGo').addEventListener('click', startUrlImport);
+
+  // File System Access 优先：只有在支持且用户点击时才调用；失败/取消退回 input
+  $('#btnContinue').addEventListener('click', (e) => { e.stopPropagation(); toggleContinuePop(); });
+  $('#continueClose').addEventListener('click', () => closeContinuePop());
+  $('#continuePop').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-act]');
+    if (!b) return;
+    if (b.dataset.act === 'open') continueRecent(b.dataset.key);
+    else if (b.dataset.act === 'remove') { removeRecent(b.dataset.key); renderContinuePop(); }
+  });
+  document.addEventListener('click', (ev) => {
+    const pop = $('#continuePop');
+    if (!pop || pop.hidden) return;
+    if (pop.contains(ev.target) || ev.target.closest('#btnContinue')) return;
+    closeContinuePop({ returnFocus: false });
+  });
+  window.addEventListener('resize', debounce(() => { if (!$('#continuePop').hidden) positionContinuePop(); }, 100));
   $('#fileSub').addEventListener('change', (e) => {
     const f = e.target.files?.[0];
     if (f) importSubtitle(f);
     e.target.value = '';
   });
   $('#btnTranscribe').addEventListener('click', runTranscribe);
+  $('#btnCancelJob').addEventListener('click', cancelCurrentJob);
+  $('#btnRetryJob').addEventListener('click', retryLastJob);
+  $('#btnPlayerSettings').addEventListener('click', () => {
+    toggleDrawer('setDrawer');
+    setTimeout(() => $('#setMaskSec')?.scrollIntoView({ block: 'start' }), 120);
+  });
+  $('#followReturn').addEventListener('click', () => {
+    S.followPaused = false;
+    showFollowReturn(false);
+    if (S.activeIdx >= 0) setActive(S.activeIdx, true, { force: true });
+  });
   $('#btnDemo').addEventListener('click', loadDemo);
   $('#btnDemoSub').addEventListener('click', async () => {
     try {
@@ -734,11 +1403,12 @@ function bindUI() {
   $('#btnReplaySent').addEventListener('click', replayCurrent);
   $('#btnLoopSent').addEventListener('click', toggleLoop);
 
-  player.addEventListener('loadedmetadata', updateDuration);
+  player.addEventListener('loadedmetadata', () => { updateDuration(); restorePositionOnLoad(); });
   player.addEventListener('timeupdate', onTimeUpdate);
   player.addEventListener('play', syncPlayIcon);
+  // 只同步图标。暂停归因不看媒体事件（加载/系统打断也会触发 pause），
+  // 而是看用户是否真的操作了播放控件（togglePlay / 空格 / 播放器点击）。
   player.addEventListener('pause', syncPlayIcon);
-  player.addEventListener('click', togglePlay);
 
   // --- 字幕面板 ---
   $('#subs').addEventListener('click', onSubsClick);
@@ -746,9 +1416,15 @@ function bindUI() {
     const w = e.target.closest('.w');
     if (!w) return;
     markWord(w);
-    openWordCard(w.dataset.w, w, S.activeIdx);
+    openWordCard(w.dataset.w, w, S.activeIdx, { fromSentence: true });
   });
   $('#subs').addEventListener('scroll', () => { S.lastUserScroll = Date.now(); }, { passive: true });
+  // 用户一滚就暂停跟随（滚轮 / 触控 / 拖滚动条都算），不自动抢回
+  ['wheel', 'touchstart', 'pointerdown'].forEach((ev) => {
+    $('#subs').addEventListener(ev, () => {
+      if (S.cues.length) { S.followPaused = true; showFollowReturn(true); }
+    }, { passive: true });
+  });
   $('#viewSeg').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
@@ -759,7 +1435,29 @@ function bindUI() {
     if (S.activeIdx >= 0) setActive(S.activeIdx, true);
   });
   $('#subSearch').addEventListener('input', debounce((e) => applySearch(e.target.value.trim()), 180));
-  $('#chkAutoScroll').addEventListener('change', (e) => { S.settings.autoScroll = e.target.checked; saveSettings(); });
+  const syncAutoScroll = (on) => {
+    S.settings.autoScroll = on;
+    S.settings.follow = on;
+    saveSettings();
+    $('#chkAutoScroll').checked = on;
+    const c2 = $('#chkAutoScroll2');
+    if (c2) c2.checked = on;
+    if (on) { S.followPaused = false; showFollowReturn(false); if (S.activeIdx >= 0) setActive(S.activeIdx, true, { force: true }); }
+  };
+  $('#chkAutoScroll').addEventListener('change', (e) => syncAutoScroll(e.target.checked));
+  $('#chkAutoScroll2')?.addEventListener('change', (e) => syncAutoScroll(e.target.checked));
+  $('#chkThirdLang')?.addEventListener('change', (e) => {
+    S.settings.showMid = e.target.checked;
+    applyLangView();
+    saveSettings();
+  });
+  const chkPause = $('#chkPauseLookup');
+  if (chkPause) chkPause.addEventListener('change', (e) => { S.settings.pauseOnLookup = e.target.checked; saveSettings(); });
+  const btnRecentClear = $('#btnRecentClear');
+  if (btnRecentClear) btnRecentClear.addEventListener('click', async () => {
+    const ok = await askModal({ title: t('set.recent'), body: t('set.recentConfirm'), okText: t('set.recentClear'), cancelText: t('common.cancel') });
+    if (ok) clearAllHistory();
+  });
 
   // --- 右侧英文 / 中文的独立开关 ---
   // 提示条做成 #subs 的兄弟节点：renderSubs 会整块重写 #subs 的内容，
@@ -813,38 +1511,49 @@ function bindUI() {
   $('#setClose').addEventListener('click', () => closeDrawers());
   $('#scrim').addEventListener('click', closeDrawers);
 
-  // --- 复习 ---
+  // --- 复习（三选一）---
   $('#btnReview').addEventListener('click', openReview);
   $('#rvClose').addEventListener('click', closeReview);
   $('#rvSpeak').addEventListener('click', speakReview);
   $('#rvSpeakSlow').addEventListener('click', () => {
     const cur = reviewCur();
     if (!cur) return;
-    // 慢速：只改这一次的速率，不动设置里用户选好的朗读速度。
-    speakIn(cur.kind === 'word' ? cur.rec.word : cur.rec.en, recLang(cur.rec), { rate: 0.6 });
+    speakIn(cur.quiz.prompt, recLang(cur.rec), { rate: 0.6 });
   });
-  // 「看答案」在两种状态下是两种动作：卡片上 = 显形，结束页 = 关闭。
-  // 只用一个监听器按状态分派 —— 混用 addEventListener 和 onclick 会让
-  // 结束页那一下同时触发「关闭」和「显形」，浮层刚关又被重新渲染出来。
-  $('#rvShow').addEventListener('click', () => {
-    if (S.review && S.review.idx >= S.review.queue.length) closeReview();
-    else revealReview();
+  $('#rvFinish').addEventListener('click', () => {
+    const r = S.review;
+    if (!r) return;
+    if (r.idx + 1 >= r.queue.length) { r.idx = r.queue.length; renderReview(); }
+    else nextReview();
   });
-  $('#rvYes').addEventListener('click', () => gradeReview(true));
-  $('#rvNo').addEventListener('click', () => gradeReview(false));
-  // 复习时键盘优先：空格再听一遍、回车看答案、←/→ 评分。
-  // 手不用离开键盘，才能一直盯着屏幕（或者闭着眼听）。
+  const syncReviewToggle = (which, on) => {
+    const r = S.review;
+    if (!r) return;
+    r[which] = on;
+    const key = which === 'showZh' ? 'reviewShowZh' : which === 'showEn' ? 'reviewShowEn' : 'reviewAutoSpeak';
+    S.settings[key] = on;
+    saveSettings();
+    if (which === 'autoSpeak' && !on) TTS.stopSpeak();
+    renderReview();
+  };
+  $('#rvZhToggle').addEventListener('click', () => syncReviewToggle('showZh', !S.review?.showZh));
+  $('#rvEnToggle').addEventListener('click', () => syncReviewToggle('showEn', !S.review?.showEn));
+  $('#rvAutoToggle').addEventListener('click', () => syncReviewToggle('autoSpeak', !S.review?.autoSpeak));
   document.addEventListener('keydown', (e) => {
     if ($('#reviewOverlay').hidden || !S.review) return;
-    // e.target 不一定是元素（dispatch 到 document 时就是 document，没有 matches）。
-    // 直接调 .matches() 会抛 TypeError，整个键盘响应就废了。
     const tag = e.target?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
     const done = S.review.idx >= S.review.queue.length;
     if (e.code === 'Space') { e.preventDefault(); if (!done) speakReview(); }
-    else if (e.key === 'Enter') { e.preventDefault(); if (done) { closeReview(); } else if (!S.review.revealed) revealReview(); }
-    else if (e.key === 'ArrowRight' && S.review.revealed) { e.preventDefault(); gradeReview(true); }
-    else if (e.key === 'ArrowLeft' && S.review.revealed) { e.preventDefault(); gradeReview(false); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (done) closeReview();
+      else if (S.review.answered) nextReview();
+      else if (!$('#rvFinish').hidden) nextReview();
+    }
+    else if (/^[1-3]$/.test(e.key) && !done && !S.review.answered) {
+      e.preventDefault(); answerReview(Number(e.key) - 1);
+    }
     else if (e.key === 'Escape') { e.preventDefault(); closeReview(); }
   });
   $('#favSeg').addEventListener('click', (e) => {
@@ -1249,13 +1958,47 @@ function resetMaskForNewVideo() {
 
 /* ============================ 视频载入 ============================ */
 
-async function openVideoFile(file) {
+/** File System Access 导入：只在用户手势里调用；不支持/取消/报错都退回 input。 */
+async function openViaPicker() {
+  if (!hasFileHandleSupport()) return false;
+  const types = [{
+    description: 'Video or audio',
+    accept: {
+      'video/*': ['.mp4', '.mov', '.mkv', '.webm', '.m4v'],
+      'audio/*': ['.mp3', '.m4a', '.wav', '.aac', '.ogg', '.opus', '.flac'],
+    },
+  }];
+  try {
+    const [handle] = await window.showOpenFilePicker({ multiple: false, types, excludeAcceptAllOption: false });
+    if (!handle) return false;
+    const file = await handle.getFile();
+    await openVideoFile(file, { fileHandle: handle });
+    return true;
+  } catch (e) {
+    if (e?.name === 'AbortError') return true;   // 用户取消：不要偷偷再开一个选择框
+    console.warn('[continue] picker unavailable, falling back', e);
+    return false;
+  }
+}
+
+async function openVideoFile(file, opts = {}) {
+  if (!LIC_ON && !needLicense()) return;
   // 换了素材：作废正在进行的识别与翻译，避免旧结果写进新视频
   S.asrRun++;
   ASR.cancel();
   if (S.transAbort) { S.transAbort.abort(); S.transAbort = null; }
   S.recog = false;
+  S.lastFail = null;
   clearKaraoke();
+
+  // 从句柄重开时沿用原 key（字幕属于哪个媒体由原 key 决定），
+  // 但只有 openVideoFile 内部实际校验过的文件才会走到这里。
+  const key = opts.sessionKey || sessionIdFor(file);
+  const prev = loadSession(key);
+  const restored = prev && prev.key === key && prev.cues.length ? prev : null;
+  if (!restored && S.mediaPending && S.name && S.name !== file.name) {
+    toast(t('media.fileMismatch'), 4000);
+  }
 
   const isAudioOnly = /^audio\//.test(file.type) || /\.(mp3|m4a|wav|aac|flac|ogg|opus)$/i.test(file.name);
   const player = $('#player');
@@ -1265,9 +2008,22 @@ async function openVideoFile(file) {
   player.load();
   S.name = file.name;
   S.file = file;
-  S.cues = [];
-  S.recogLang = null;   // 新视频：还没识别过，没有「旧语言」可言
+  S.sessionKey = key;
+  S.mediaPending = false;
+  S.pendingHandleKey = null;
+  renderMediaNotice();
+  // 只有 File System Access 用户手势导入才可能带句柄；普通 input/拖放没有
+  if (opts.fileHandle && hasFileHandleSupport()) {
+    saveHandle(key, opts.fileHandle).then(() => { refreshRecentEntries(); });
+  }
+  // 同一文件之前识别过：直接恢复字幕与译文，不重复跑识别
+  // 原样恢复 words（真实逐词时间戳）；没有 words 才让 wordTimings 去估算
+  S.cues = restored ? restored.cues.map((c, i) => ({ ...c, i })) : [];
+  S.cues.forEach((c) => { delete c._wt; });
+  S.recogLang = restored ? restored.recogLang : null;
   S.activeIdx = -1;
+  S.resumeAt = restored ? restored.at : 0;
+  S.lastStatus = restored ? restored.status : null;
   S.audioOnly = isAudioOnly;
   const wrap = $('#playerWrap');
   wrap.classList.toggle('audio-only', isAudioOnly);
@@ -1290,8 +2046,16 @@ async function openVideoFile(file) {
   resetProgress();
   toast(t('toast.loaded', { name: file.name, size: (file.size / 1048576).toFixed(1) }));
 
-  // 导入即自动识别，结果实时出现在右侧
-  if (S.settings.autoRun) autoRunAfterLoad(file);
+  // 恢复的字幕直接显示在右侧；只有没有字幕时才自动识别
+  if (restored && restored.cues.length) {
+    renderSubs();
+    toast(t('dz.recentStatus', { n: restored.cues.length, t: fmtTime(restored.at || 0) }), 4000);
+    const missingZh = restored.cues.some((c) => !c.zh);
+    if (missingZh && S.settings.transMode === 'local') translateAll({ retry: true });
+  } else if (S.settings.autoRun) {
+    autoRunAfterLoad(file);
+  }
+  persistSession({ status: restored?.status || 'processing' });
 }
 
 /** 等媒体元数据就绪拿到时长，再排队自动识别（若上一任务未结束会先等它让出） */
@@ -1351,7 +2115,13 @@ function updateDuration() {
 function togglePlay() {
   const p = $('#player');
   if (!p.src) return;
-  if (p.paused) p.play().catch(() => {}); else p.pause();
+  if (p.paused) {
+    S.wordCardPause && (S.wordCardPause.userPaused = false);
+    p.play().catch(() => {});
+  } else {
+    markUserPaused();
+    p.pause();
+  }
 }
 
 function seekBy(d) {
@@ -1398,7 +2168,28 @@ function startTick() {
   loop();
 }
 
-function onTimeUpdate() { /* 由 rAF 轮询驱动，保留钩子 */ }
+let lastPersist = 0;
+
+function restorePositionOnLoad() {
+  const player = $('#player');
+  if (!S.resumeAt || !S.sessionKey) return;
+  const at = Math.min(S.resumeAt, Math.max(0, (player.duration || S.resumeAt) - 0.5));
+  if (at > 0.2) {
+    player.currentTime = at;
+    const i = findCue(at);
+    if (i >= 0) setActive(i, true);
+  }
+  S.resumeAt = 0;
+}
+
+function onTimeUpdate() {
+  // 每 4 秒把真实位置写一次；不写文件内容、不写路径
+  if (!S.file || !S.sessionKey) return;
+  const now = performance.now();
+  if (now - lastPersist < 4000) return;
+  lastPersist = now;
+  persistSession({ status: S.recog ? 'processing' : (S.cues.length ? (S.lastStatus === 'failed' ? 'failed' : 'ready') : 'partial') });
+}
 
 function findCue(t) {
   const cues = S.cues;
@@ -1625,6 +2416,7 @@ function setCues(cues, { translate = true } = {}) {
   S.cues = cues;
   S.activeIdx = -1;
   renderSubs();
+  if (S.sessionKey && cues.length) persistSession({ status: 'processing' });
   // retry：若此刻识别任务还没让出，就等它结束后再翻译
   if (translate && cues.length) translateAll({ retry: true });
 }
@@ -1639,13 +2431,15 @@ function renderSubs(filter = '') {
   box.innerHTML = '';
   S.cueEls = [];
   if (!S.cues.length) {
-    box.appendChild(el('div', {
-      class: 'empty',
-      html: S.recog
-        ? `<div class="recog-spin"></div><p>${escapeHtml(t('recog.running'))}</p>` +
-          `<p class="muted">${t('recog.runningHint')}</p>`
-        : `<p>${escapeHtml(t('empty.none'))}</p><p class="muted">${t('empty.hint')}</p>`,
-    }));
+    const empty = el('div', { class: 'empty' });
+    if (S.recog) {
+      empty.innerHTML = `<div class="recog-spin"></div><p>${escapeHtml(t('recog.running'))}</p>` +
+        `<p class="muted">${t('recog.runningHint')}</p>`;
+    } else {
+      empty.innerHTML = `<p>${escapeHtml(t('empty.none'))}</p><p class="muted">${t('empty.hint')}</p>` +
+        `<div class="empty-actions"><label class="btn btn-sm btn-primary" for="fileVideo">${escapeHtml(t('dz.choose'))}</label></div>`;
+    }
+    box.appendChild(empty);
     clearKaraoke();
     return;
   }
@@ -1667,14 +2461,15 @@ function renderSubs(filter = '') {
   // 重建 DOM 后恢复当前句高亮与滚动位置
   const active = S.cueEls[S.activeIdx];
   if (active) active.classList.add('active');
-  if (S.recog && !filter) {
-    // 识别过程中贴着底部看最新句子，除非用户自己滚上去查看了
-    if (Date.now() - S.lastUserScroll > 3200) {
-      box.scrollTop = box.scrollHeight;
-    } else {
-      box.scrollTop = scrollTop;
-    }
+  if (S.recog && !filter && !S.followPaused) {
+    // 识别过程中贴着底部看最新句子；用户一旦主动滚动就不再抢
+    box.scrollTop = box.scrollHeight;
+  } else if (filter) {
+    box.scrollTop = 0;
+  } else {
+    box.scrollTop = scrollTop;
   }
+  showFollowReturn(S.followPaused && S.cues.length > 0);
   renderBigScreen();
   prepareKaraoke(active);
 }
@@ -1717,7 +2512,14 @@ function cueInnerHTML(c) {
     `<div class="cue-en">${en}</div>${midHTML}${zh}`;
 }
 
-function setActive(idx, scroll) {
+function showFollowReturn(on) {
+  const b = $('#followReturn');
+  if (!b) return;
+  b.hidden = !on;
+  b.title = t('follow.paused');
+}
+
+function setActive(idx, scroll, { force = false } = {}) {
   if (idx !== S.activeIdx) {
     const prev = S.cueEls[S.activeIdx];
     if (prev) prev.classList.remove('active');
@@ -1727,13 +2529,16 @@ function setActive(idx, scroll) {
   if (!node) { clearKaraoke(); renderBigScreen(); return; }
   // 每次都重新打上标记：renderSubs 会重建 DOM，早退会丢掉高亮
   node.classList.add('active');
-  if (scroll && S.settings.autoScroll && Date.now() - S.lastUserScroll > 3200) {
+  // 只在用户没主动滚动、且仍开启跟随时才自动拉回；force 只给「回到当前句」用
+  const followed = S.settings.autoScroll && (!S.followPaused || force);
+  if (scroll && followed) {
     const box = $('#subs');
     const nr = node.getBoundingClientRect();
     const br = box.getBoundingClientRect();
     if (nr.top < br.top + 24 || nr.bottom > br.bottom - 24) {
       box.scrollTop += nr.top - br.top - br.height / 2 + nr.height / 2;
     }
+    showFollowReturn(false);
   }
   renderBigScreen();
   prepareKaraoke(node);
@@ -1781,7 +2586,7 @@ function onSubsClick(e) {
   if (w) {
     const word = w.dataset.w;
     markWord(w);
-    openWordCard(word, w, idx);
+    openWordCard(word, w, idx, { fromSentence: true });
     return;
   }
 
@@ -1876,6 +2681,17 @@ function speakIn(text, lang, extra = {}) {
  *  这时必须按记录自己的语言查，不能跟着当前模式走。 */
 async function openWordCard(word, anchor, cueIdx, opts = {}) {
   const card = $('#wordcard');
+  // 只在从字幕/大字区打开时接管播放；收藏抽屉里查词不打扰当前播放
+  const fromSentence = cueIdx >= 0 || opts.fromSentence;
+  const player = $('#player');
+  if (fromSentence && card.hidden && S.settings.pauseOnLookup !== false) {
+    // 只记录「打开前是否在播」；用户暂停由真实的播放控件操作标记，
+    // 不靠 pause 事件时序猜测（媒体加载/系统打断也会触发 pause）。
+    S.wordCardPause = { wasPlaying: !player.paused, userPaused: false };
+    if (!player.paused) player.pause();
+  } else if (card.hidden) {
+    S.wordCardPause = null;
+  }
   S.wordCardFor = null;
   card.hidden = false;
   setText('wcWord', word);
@@ -1908,6 +2724,7 @@ async function openWordCard(word, anchor, cueIdx, opts = {}) {
   const cue = cueIdx >= 0 ? S.cues[cueIdx] : null;
   // 没有 cue（收藏抽屉进来）就退回收藏时留下的例句，别让「例句」那一栏空掉
   const inSentence = cue?.text || opts.sample || '';
+  const cueZh = cue?.zh || opts.sampleZh || '';
   S.wordCardFor = {
     // 卡片和收藏都留用户点下去的那个词。西语模式尤其重要：查到的 entry 是
     // 那本**英语**词典里的对译词（práctica → practice），拿 entry.word 当主键
@@ -1923,21 +2740,28 @@ async function openWordCard(word, anchor, cueIdx, opts = {}) {
     exch: entry?.exch || '',
     inflected: !!entry?.inflected,
     sample: inSentence,
-    sampleZh: cue?.zh || opts.sampleZh || '',
+    sampleZh: cueZh,
     video: S.name || opts.video || '',
     at: cue?.start ?? opts.at ?? null,
   };
 
+  // 当前句只作为「上下文线索」原样展示；没有上下文义项就明确说明，不编造
+  const ctxWords = inSentence ? highlightWord(inSentence, word) : '';
+  const ctx = inSentence
+    ? `<div class="wc-context"><b>${escapeHtml(t('wc.context'))}</b>${escapeHtml(ctxWords)}` +
+      (cueZh ? `<span class="wc-ctx-zh">${escapeHtml(cueZh)}</span>` : '') + '</div>'
+    : '';
   if (!entry) {
     setText('wcPhon', '');
-    $('#wcBody').innerHTML = `<div class="sense"><div class="txt">${escapeHtml(t('wc.missing'))}</div></div>`;
+    $('#wcBody').innerHTML = ctx + `<div class="sense"><div class="txt">${escapeHtml(t('wc.missing'))}</div></div>` +
+      `<div class="wc-context">${escapeHtml(t('wc.contextMissing'))}</div>`;
   } else {
     // 西语模式卡片标题保持西语原词（那才是用户点的），英语模式照旧用词形还原后的词
     setText('wcWord', es ? word : entry.word);
     // 音标是英语的，贴在西语词头上会误导 —— 西语模式把对译词放到脚注里说明
     setText('wcPhon', es ? '' : (entry.phonetic || ''));
     const senses = splitSenses(entry.trans, entry.pos);
-    $('#wcBody').innerHTML = senses.map((s) =>
+    $('#wcBody').innerHTML = ctx + senses.map((s) =>
       `<div class="sense">${s.pos ? `<span class="pos">${escapeHtml(s.pos)}</span>` : ''}<span class="txt">${escapeHtml(s.txt)}</span></div>`
     ).join('') + (entry.engdef
       ? `<div class="wc-def"><b>${escapeHtml(t('wc.engDef'))}</b>${escapeHtml(entry.engdef)}</div>` : '');
@@ -1997,10 +2821,25 @@ function positionCard(card, anchor) {
   card.style.top = top + 'px';
 }
 
+function markUserPaused() {
+  if (!S.wordCardPause) return;
+  S.wordCardPause.userPaused = true;
+}
+
 function closeWordCard() {
+  const wasOpen = !$('#wordcard').hidden;
   $('#wordcard').hidden = true;
   S.wordCardFor = null;
   $$('#subs .w.sel').forEach((x) => x.classList.remove('sel'));
+  // 只有「打开前确实在播放」且「用户没有在中途自己暂停」才续播
+  if (wasOpen && S.wordCardPause) {
+    const { wasPlaying, userPaused } = S.wordCardPause;
+    const player = $('#player');
+    if (wasPlaying && !userPaused && player.paused) {
+      player.play().catch((e) => console.warn('[wordcard] 恢复播放失败', e));
+    }
+  }
+  S.wordCardPause = null;
 }
 
 function syncFavButton() {
@@ -2010,12 +2849,13 @@ function syncFavButton() {
   btn.title = on ? t('wc.unfav') : t('wc.fav');
 }
 
-/* ============================ 复习 ============================
-   练的是听力：先只给声音，听懂没听懂由用户自评，排期交给 SRS。
-   刻意不做「看单词选意思」—— 那会把工具前面所有逼你听的功夫抵消掉。
-============================================================= */
+/* ============================ 复习 · 三选一 ============================
+   用户当前要求：每题三个选项，一个正确、两个来自**真实收藏库**的不同错误项；
+   不靠自评「记住了/没记住」，答题结果直接交给 SRS。
+   固定队列在打开时定好，答题不会追加；语言列与自动朗读可独立开关。
+   题目/选项只用真实收藏数据；池子不足两个不同错误项时明确说明，不造假。
+========================================================================= */
 
-/** 当前模式这一档里，到期的条目（生词 + 句子）。 */
 function reviewPool(lang = favLang()) {
   const out = [];
   for (const w of S.favWords.values()) {
@@ -2027,7 +2867,7 @@ function reviewPool(lang = favLang()) {
   return out;
 }
 
-/** 到期的排前面，其余按到期时间；同一时刻到期的把句子放前面（句子是主角）。 */
+/** 到期的排前面；同一时刻句子优先。固定队列，不在答题时追加。 */
 function reviewQueue(lang = favLang(), now = Date.now()) {
   const pool = reviewPool(lang);
   return pool
@@ -2039,7 +2879,6 @@ function reviewQueue(lang = favLang(), now = Date.now()) {
     });
 }
 
-/** 刷新顶栏角标。0 条时把角标藏起来 —— 一屏的「0」比没有更烦人。 */
 function refreshReviewBadge() {
   const btn = $('#btnReview');
   const badge = $('#reviewCount');
@@ -2050,13 +2889,112 @@ function refreshReviewBadge() {
   btn.classList.toggle('has-due', n > 0);
 }
 
+/* ---------- 题目与干扰项 ---------- */
+
+/** 一条收藏在测验里“被问什么、正确答案是什么”。 */
+function quizPayload(item, lang) {
+  if (item.kind === 'word') {
+    const w = item.rec;
+    // 单词题：给词，问意思。中文义项优先；没有中文时退回英文释义。
+    const correct = (w.trans || '').trim() || (w.engdef || '').trim();
+    return {
+      kind: 'word', lang,
+      prompt: w.word,
+      phonetic: w.phonetic || '',
+      correct,
+      correctZh: (w.trans || '').trim(),
+      correctEn: (w.engdef || '').trim(),
+      contextEn: w.sample || '',
+      contextZh: w.sampleZh || '',
+    };
+  }
+  const s2 = item.rec;
+  // 句子题：给原文，问真实译文。中文优先；没有中文时用英文翻译（西语模式）。
+  const correct = (s2.zh || '').trim() || (s2.mid || '').trim();
+  return {
+    kind: 'sent', lang,
+    prompt: s2.en || '',
+    phonetic: '',
+    correct,
+    correctZh: (s2.zh || '').trim(),
+    correctEn: (s2.mid || '').trim(),
+    contextEn: '',
+    contextZh: '',
+  };
+}
+
+/** 同一题目的所有可读答案（用于从真实收藏里挑不同干扰项）。 */
+function answerOf(item) {
+  if (item.kind === 'word') {
+    return ((item.rec.trans || '') + ' ' + (item.rec.engdef || '')).trim();
+  }
+  return ((item.rec.zh || '') + ' ' + (item.rec.mid || '')).trim();
+}
+
+/** 从同语言、同类型的真实收藏里选两个不同错误答案。
+ *  不跨语言、不跨类型、不用示例数据；不足时返回 null，由 UI 解释。 */
+function buildQuiz(item, lang = favLang()) {
+  const payload = quizPayload(item, lang);
+  if (!payload.correct) return null;
+  const pool = reviewPool(lang)
+    .filter((it) => it !== item && it.kind === item.kind)
+    .map((it) => quizPayload(it, lang))
+    .filter((p) => p.correct && p.correct !== payload.correct);
+  // 同一答案文案只保留一条（不同收藏可能撞同一译文）
+  const seen = new Set([payload.correct]);
+  const distractors = [];
+  for (const p of pool.sort(() => Math.random() - 0.5)) {
+    if (seen.has(p.correct)) continue;
+    seen.add(p.correct);
+    distractors.push(p.correct);
+    if (distractors.length === 2) break;
+  }
+  if (distractors.length < 2) return null;
+  const options = [
+    { text: payload.correct, correct: true },
+    ...distractors.map((text) => ({ text, correct: false })),
+  ];
+  // 位置随机，但每题只洗一次；渲染/切换语言/重播不会重排
+  for (let i = options.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [options[i], options[j]] = [options[j], options[i]];
+  }
+  return { ...payload, options };
+}
+
+/** 准备整个固定队列的题目。题目不足时返回 {items, skipped, reason}。 */
+function prepareReviewQuiz(queue, lang) {
+  const items = [];
+  const skipped = [];
+  for (const it of queue) {
+    const q = buildQuiz(it, lang);
+    if (q) {
+      // 选项位置在入队时定死；渲染、切语言、重播都不会重排
+      items.push({ ...it, quiz: q, stableOptions: q.options.slice() });
+    } else skipped.push(it);
+  }
+  return { items, skipped };
+}
+
 function openReview() {
-  const q = reviewQueue();
+  const lang = favLang();
+  const q = reviewQueue(lang);
   if (!q.length) {
     toast(t('rv.none'));
     return;
   }
-  S.review = { queue: q, idx: 0, ok: 0, bad: 0, revealed: false, lang: favLang() };
+  const prep = prepareReviewQuiz(q, lang);
+  if (!prep.items.length) {
+    toast(t('rv.needPool'), 6000);
+    return;
+  }
+  S.review = {
+    queue: prep.items, skipped: prep.skipped.length, idx: 0, ok: 0, bad: 0,
+    lang, answered: false, choice: null, revealed: false,
+    autoSpeak: S.settings.reviewAutoSpeak !== false,
+    showZh: S.settings.reviewShowZh !== false,
+    showEn: S.settings.reviewShowEn !== false,
+  };
   $('#reviewOverlay').hidden = false;
   renderReview();
 }
@@ -2064,14 +3002,10 @@ function openReview() {
 function closeReview() {
   S.review = null;
   $('#reviewOverlay').hidden = true;
-  // 结束页会把按钮文案改成「完成」，下次进来要变回「看答案」。
-  $('#rvShow').textContent = t('rv.show');
-  $('#rvShow').hidden = false;
   TTS.stopSpeak();
   refreshReviewBadge();
 }
 
-/** 当前这张卡。 */
 const reviewCur = () => {
   const r = S.review;
   if (!r || r.idx >= r.queue.length) return null;
@@ -2082,143 +3016,136 @@ function renderReview() {
   const r = S.review;
   if (!r) return;
   const box = $('#rvBody');
-  const ans = $('#rvAnswer');
   const foot = $('#rvFoot');
   const cur = reviewCur();
+  $('#rvFinish').hidden = true;
 
   if (!cur) { renderReviewDone(); return; }
 
   $('#rvProgress').textContent = t('rv.progress', { i: r.idx + 1, n: r.queue.length });
-  // 只有展开过答案才出现「听懂了/没听懂」。先给答案再让人自评就失去意义了。
-  $('#rvShow').hidden = r.revealed;
-  $('#rvGrade').hidden = !r.revealed;
-  ans.hidden = true;
+  $('#rvZhToggle').setAttribute('aria-pressed', String(r.showZh));
+  $('#rvEnToggle').setAttribute('aria-pressed', String(r.showEn));
+  $('#rvAutoToggle').setAttribute('aria-pressed', String(r.autoSpeak));
+  $('#rvZhToggle').classList.toggle('on', r.showZh);
+  $('#rvEnToggle').classList.toggle('on', r.showEn);
+  $('#rvAutoToggle').classList.toggle('on', r.autoSpeak);
+
+  const q = cur.quiz;
+  const options = cur.stableOptions || q.options;
   box.innerHTML = '';
   foot.textContent = '';
+  box.appendChild(el('div', { class: 'rv-quiz-kind', text: t(cur.kind === 'word' ? 'rv.kindWord' : 'rv.kindSent') }));
 
-  const listen = el('button', { class: 'rv-listen', id: 'rvListen', type: 'button', title: t('rv.replay') }, [
-    el('div', { html: '<svg viewBox="0 0 24 24"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M16 9a4 4 0 010 6"/><path d="M19.5 6.5a8 8 0 010 11"/></svg>' }),
-    el('span', { class: 'rv-listen-label', text: t('rv.tapToListen') }),
-  ]);
-  box.appendChild(listen);
+  // 题干：原文列与中文列各自独立显隐；答案选项永远可见。
+  const prompt = el('div', { class: 'rv-prompt' });
+  if (r.showEn) prompt.appendChild(el('div', { class: 'rv-src', text: q.prompt }));
+  if (q.phonetic && r.showEn) prompt.appendChild(el('div', { class: 'rv-phon', text: q.phonetic }));
+  if (r.showZh && q.contextZh) prompt.appendChild(el('div', { class: 'rv-context', text: q.contextZh }));
+  if (r.showEn && q.contextEn && q.contextEn !== q.prompt) prompt.appendChild(el('div', { class: 'rv-context en', text: q.contextEn }));
+  if (!r.showEn && !r.showZh) {
+    prompt.appendChild(el('div', { class: 'rv-all-hidden', text: t('rv.allHidden') }));
+  }
+  box.appendChild(prompt);
 
-  if (cur.kind === 'word') {
-    const w = cur.rec;
-    // 单词：正面就是词，不模糊（不认识就是不认识，藏起来没意义）。
-    // 藏的是释义。
-    box.appendChild(el('div', { class: 'rv-word', text: w.word }));
-    if (w.phonetic) box.appendChild(el('div', { class: 'rv-phon', text: w.phonetic }));
-    ans.hidden = false;
-    ans.innerHTML = '';
-    ans.appendChild(el('div', { class: 'rv-def' + (r.revealed ? '' : ' blur'), text: w.trans || t('fav.noDef') }));
-    if (w.engdef) ans.appendChild(el('div', { class: 'rv-engdef', text: w.engdef }));
-    if (w.sample) ans.appendChild(el('div', { class: 'rv-meta', text: t('rv.from') + w.sample }));
+  const choices = el('div', { class: 'rv-choices', role: 'group', 'aria-label': t('rv.choices') });
+  options.forEach((o, i) => {
+    const b = el('button', {
+      class: 'rv-choice' + (r.answered && o.correct ? ' correct' : '') +
+        (r.answered && r.choice === i && !o.correct ? ' wrong' : ''),
+      type: 'button', 'data-choice': String(i),
+      'aria-pressed': String(r.choice === i),
+      disabled: r.answered,
+    });
+    b.innerHTML = `<span class="rv-choice-key">${i + 1}</span><span class="rv-choice-text">${escapeHtml(o.text)}</span>`;
+    b.addEventListener('click', (ev) => { ev.stopPropagation(); answerReview(i); });
+    choices.appendChild(b);
+  });
+  box.appendChild(choices);
+
+  if (r.answered) {
+    const correct = options.find((o) => o.correct);
+    const ok = r.choice != null && options[r.choice]?.correct;
+    foot.className = 'rv-foot ' + (ok ? 'ok' : 'bad');
+    foot.textContent = ok ? t('rv.correct') : t('rv.wrong', { answer: correct?.text || '' });
+    $('#rvFinish').hidden = false;
+    $('#rvFinish').textContent = r.idx + 1 >= r.queue.length ? t('rv.finish') : t('rv.next');
   } else {
-    const s = cur.rec;
-    // 句子：原文和译文都模糊。这是「先听懂再说」的关键一步。
-    box.appendChild(el('div', { class: 'rv-hint', text: t('rv.hintSent') }));
-    ans.hidden = false;
-    ans.innerHTML = '';
-    ans.appendChild(el('div', { class: 'rv-src' + (r.revealed ? '' : ' blur'), text: s.en }));
-    if (s.mid) ans.appendChild(el('div', { class: 'rv-mid' + (r.revealed ? '' : ' blur'), text: s.mid }));
-    if (s.zh) ans.appendChild(el('div', { class: 'rv-zh' + (r.revealed ? '' : ' blur'), text: s.zh }));
-    const meta = [s.video || t('fav.unknownVideo'), fmtTime(s.start || 0)].join(' · ');
-    ans.appendChild(el('div', { class: 'rv-meta', text: meta }));
+    foot.className = 'rv-foot';
+    foot.textContent = r.showZh || r.showEn ? '' : t('rv.answerStillVisible');
   }
 
-  if (r.revealed) foot.textContent = t('rv.nextDue', { a: dueLabel(cur.rec, true), b: dueLabel(cur.rec, false) });
-  box.querySelector('#rvListen').addEventListener('click', () => speakReview());
-  // 进来就自动念一遍 —— 少点一次，且马上把注意力拉到耳朵上。
-  speakReview();
-}
-
-/** 「答这个会推到多久以后」的预览，给用户一个「答对值不值」的即时反馈。
- *  这只是算一下、给个说法，不写库也不改记录（SRS.grade 是纯函数）。 */
-function dueLabel(rec, ok) {
-  const next = SRS.grade(rec, ok);
-  return humanUntil(next.dueAt);
+  // 只在题目切换时自动读一次；手动重播随时可用。关闭自动朗读则绝不主动出声。
+  if (r.autoSpeak && !r.spoken) {
+    r.spoken = true;
+    speakReview();
+  }
 }
 
 function speakReview() {
   const cur = reviewCur();
   if (!cur) return;
-  const btn = $('#rvListen');
-  const text = cur.kind === 'word' ? cur.rec.word : cur.rec.en;
-  const lang = recLang(cur.rec);
-  btn?.classList.add('playing');
-  speakIn(text, lang, {
-    rate: S.settings.ttsRate,
-    onEnd: () => btn?.classList.remove('playing'),
-  });
+  TTS.stopSpeak();
+  const text = cur.quiz.prompt;
+  speakIn(text, recLang(cur.rec), { rate: S.settings.ttsRate });
 }
 
-function revealReview() {
-  const r = S.review;
-  if (!r) return;
-  r.revealed = true;
-  renderReview();
-}
-
-/** 打分并进下一张。 */
-async function gradeReview(ok) {
+function answerReview(choice) {
   const r = S.review;
   const cur = reviewCur();
-  if (!r || !cur) return;
-
+  if (!r || !cur || r.answered) return;
+  r.answered = true;
+  r.choice = choice;
+  const ok = !!(cur.stableOptions || cur.quiz.options)[choice]?.correct;
   const store = cur.kind === 'word' ? 'words' : 'sentences';
   const updated = SRS.grade(cur.rec, ok);
   if (cur.kind === 'word') S.favWords.set(updated.id, updated);
   else S.favSentences.set(updated.id, updated);
-  // 排期落库失败不能中断复习 —— 内存里已经更新了，最坏情况是这次进度没存住。
   idbPut(S.db, store, updated).catch(() => {});
-
   if (ok) r.ok++; else r.bad++;
-
-  r.idx++;
-  r.revealed = false;
-  if (r.idx >= r.queue.length) {
-    renderReviewDone();
-    refreshReviewBadge();
-    if (!$('#favDrawer').hidden) renderFavs();
-    return;
-  }
   renderReview();
   refreshReviewBadge();
+  if (!$('#favDrawer').hidden) renderFavs();
+}
+
+function nextReview() {
+  const r = S.review;
+  if (!r) return;
+  if (r.idx + 1 >= r.queue.length) { r.idx = r.queue.length; renderReview(); return; }
+  r.idx++;
+  r.answered = false;
+  r.choice = null;
+  r.spoken = false;
+  renderReview();
 }
 
 function renderReviewDone() {
   const r = S.review;
   $('#rvProgress').textContent = t('rv.doneTitle');
-  $('#rvShow').hidden = true;
-  $('#rvGrade').hidden = true;
-  $('#rvAnswer').hidden = true;
   $('#rvFoot').textContent = '';
+  $('#rvFoot').className = 'rv-foot';
+  $('#rvFinish').hidden = false;
+  $('#rvFinish').textContent = t('rv.finish');
 
   const box = $('#rvBody');
   const total = r ? r.ok + r.bad : 0;
-  // 下一轮什么时候来 —— 复习完最想知道的就是这个。
   const pool = reviewPool(r?.lang);
   const nextAt = SRS.nextDueAt(pool.map((it) => it.rec));
   const nextTxt = nextAt ? t('rv.nextRound', { when: humanUntil(nextAt) }) : t('rv.allClear');
-
   box.innerHTML = '';
   box.appendChild(el('div', { class: 'rv-done' }, [
     el('h3', { text: t('rv.doneTitle') }),
     el('div', { class: 'rv-stats' }, [
       el('div', { class: 'rv-stat ok' }, [
-        el('b', { text: String(r ? r.ok : 0) }), el('span', { text: t('rv.understood') }),
+        el('b', { text: String(r ? r.ok : 0) }), el('span', { text: t('rv.correctShort') }),
       ]),
       el('div', { class: 'rv-stat bad' }, [
-        el('b', { text: String(r ? r.bad : 0) }), el('span', { text: t('rv.notYet') }),
+        el('b', { text: String(r ? r.bad : 0) }), el('span', { text: t('rv.wrongShort') }),
       ]),
     ]),
     el('p', { text: total ? t('rv.doneBody', { n: total }) : t('rv.none') }),
+    r?.skipped ? el('p', { class: 'rv-meta', text: t('rv.skipped', { n: r.skipped }) }) : null,
     el('p', { class: 'rv-meta', text: nextTxt }),
-  ]));
-  // 结束页的按钮换成「完成」。动作分派在 bindUI 那个统一监听器里（按状态判断），
-  // 这里只负责改文案。标签在 closeReview 里恢复成「看答案」。
-  $('#rvShow').hidden = false;
-  $('#rvShow').textContent = t('rv.finish');
+  ].filter(Boolean)));
 }
 
 /** 「还有多久」的人话说法。 */
@@ -2608,6 +3535,7 @@ const state = (id, cls) => { const n = document.getElementById(id); if (n) n.dat
 /* ============================ 识别流程 ============================ */
 
 async function runTranscribe() {
+  if (!LIC_ON && !needLicense()) return;
   if (S.busy) { toast(t('toast.busy')); return; }
   const file = S.file;
   if (!file) { toast(t('toast.needFile')); return; }
@@ -2617,12 +3545,16 @@ async function runTranscribe() {
 
   S.busy = 'asr';
   S.recog = true;
+  S.lastFail = null;
+  S.lastStatus = 'processing';
+  persistSession({ status: 'processing' });
   S.recogLang = modelLang(S.asrModel);   // 记下这一轮用的是什么语言，切模式时好判断要不要问
   let needTranslate = false;
   const btn = $('#btnTranscribe');
   btn.disabled = true;
   setText('btnTranscribeLabel', t('top.running'));
   dot('dotAsr', 'busy');
+  showFineProgress('asr', 0, t('prog.decode'));
   renderSubs($('#subSearch').value.trim());   // 立刻把右侧切到「识别中」状态
 
   // 边识别边刷新右侧：累计词 → 拼句 → 渲染
@@ -2665,17 +3597,23 @@ async function runTranscribe() {
       },
       onProgress: (p) => {
         if (p.phase === 'load') {
-          showProgress(p.pct ?? 0, loadProgressText(p) + paceEta(p));
+          showFineProgress('asr', p.pct ?? 0, loadProgressText(p) + paceEta(p));
         } else if (p.phase === 'transcribe') {
           // 优先显示按实测速度推算的剩余时间；还没测出速度才退回「约剩 N 段」
           const eta = p.etaSec != null && p.etaSec >= 1
             ? t('prog.etaTime', { t: fmtTime(p.etaSec) })
             : (p.seg < p.total ? t('prog.eta', { n: p.total - p.seg }) : '');
-          showProgress(p.pct, t('prog.seg', { seg: p.seg, total: p.total, words: p.words, eta }));
+          showFineProgress('asr', p.pct, t('prog.seg', { seg: p.seg, total: p.total, words: p.words, eta }));
         }
       },
     });
-    if (cancelled() || wasCancelled) return;
+    if (cancelled() || wasCancelled) {
+      if (S.cues.length) {
+        S.lastStatus = 'partial';
+        persistSession({ status: 'partial' });
+      }
+      return;
+    }
 
     if (!words.length) {
       hideProgress();
@@ -2686,13 +3624,22 @@ async function runTranscribe() {
     }
 
     paint(words, true);
+    showFineProgress('asr', 100, t('prog.stageReady'));
     hideProgress();
     toast(t('toast.recogDone', { n: S.cues.length }));
     needTranslate = S.settings.transMode === 'local';
   } catch (e) {
-    console.error(e);
+    if (cancelled()) {
+      toast(t('prog.cancelledHint'));
+    } else {
+      console.error(e);
+      S.lastFail = { kind: 'asr', msg: e?.message || String(e) };
+      S.lastStatus = S.cues.length ? 'partial' : 'failed';
+      persistSession({ status: S.lastStatus });
+      renderFailNote();
+      toast(t('toast.recogFail', { msg: e?.message || e }), 5000);
+    }
     hideProgress();
-    toast(t('toast.recogFail', { msg: e?.message || e }), 5000);
   } finally {
     S.busy = null;
     S.recog = false;
@@ -2702,6 +3649,10 @@ async function runTranscribe() {
     renderStatus();
     hideProgress();
     renderSubs($('#subSearch').value.trim());
+  }
+  if (S.cues.length) {
+    S.lastStatus = needTranslate ? 'partial' : 'ready';
+    persistSession({ status: S.lastStatus });
   }
   // 识别任务已释放，翻译作为独立任务接着跑
   if (needTranslate) translateAll();
@@ -2738,17 +3689,19 @@ async function translateAll({ force = false, retry = false } = {}) {
   refresh();
 
   S.busy = 'mt';
+  S.lastFail = null;
   dot('dotMt', 'busy');
+  showFineProgress('mt', 0, t('prog.loadMt'));
   const ctrl = new AbortController();
   S.transAbort = ctrl;
 
   const onProgress = (p) => {
     if (p.phase === 'load') {
-      showProgress(p.pct ?? 0, p.file
+      showFineProgress('mt', p.pct ?? 0, p.file
         ? t(hasCached(LS_MT_CACHED) ? 'prog.loadMtFile' : 'prog.loadMtFileFirst', { file: shortFile(p.file) })
         : t('prog.loadMt'));
     } else {
-      showProgress(p.pct, t(wantMid ? 'prog.translatingMid' : 'prog.translating', { done: p.done, total: p.total }));
+      showFineProgress('mt', p.pct, t(wantMid ? 'prog.translatingMid' : 'prog.translating', { done: p.done, total: p.total }));
       // 每若干句刷新一次，让用户看到译文逐步出现
       if (p.done % 8 === 0) refresh();
     }
@@ -2772,11 +3725,21 @@ async function translateAll({ force = false, retry = false } = {}) {
 
     refresh();
     hideProgress();
+    S.lastStatus = 'ready';
+    persistSession({ status: 'ready' });
     toast(t('toast.transDone'));
   } catch (e) {
-    console.error(e);
+    if (ctrl.signal.aborted) {
+      toast(t('prog.cancelledHint'));
+    } else {
+      console.error(e);
+      S.lastFail = { kind: 'mt', msg: e?.message || String(e) };
+      S.lastStatus = S.cues.length ? 'partial' : 'failed';
+      persistSession({ status: S.lastStatus });
+      renderFailNote();
+      toast(t('toast.transFail', { msg: e?.message || e }), 5000);
+    }
     hideProgress();
-    toast(t('toast.transFail', { msg: e?.message || e }), 5000);
   } finally {
     S.busy = null;
     S.transAbort = null;
@@ -2830,6 +3793,46 @@ function showProgress(pct, text) {
   setText('progressText', text || '');
 }
 
+/** 真实阶段：识别 / 翻译 / 就绪。进度值来自实际解码或模型回调，不伪造。 */
+function showFineProgress(stage, pct, text) {
+  S.jobStage = stage;
+  $('#progressWrap').hidden = false;
+  setText('progressStage', t(stage === 'asr' ? 'prog.stageRecognize'
+    : stage === 'mt' ? 'prog.stageTranslate' : 'prog.stageReady'));
+  const cancel = $('#btnCancelJob');
+  const retry = $('#btnRetryJob');
+  if (cancel) cancel.hidden = !(stage === 'asr' || stage === 'mt');
+  if (retry) retry.hidden = true;
+  showProgress(pct, text);
+}
+
+/** 失败不是一个一闪而过的 toast：留下可重试的真实错误。 */
+function renderFailNote() {
+  const foot = $('.stage-foot');
+  let n = $('#failNote');
+  if (!S.lastFail) { n?.remove(); return; }
+  if (!n) {
+    n = el('div', { class: 'fail-note', id: 'failNote' });
+    foot.appendChild(n);
+  }
+  const isAsr = S.lastFail.kind === 'asr';
+  n.innerHTML = `<span>${escapeHtml(t(isAsr ? 'prog.retryAsr' : 'prog.retryMt'))}</span>` +
+    `<span class="muted" style="flex:1 1 100%">${escapeHtml(String(S.lastFail.msg || '').slice(0, 200))}</span>` +
+    `<button class="btn" id="btnFailRetry"></button>` +
+    (!isAsr && S.cues.length ? `<button class="btn" id="btnFailTranslate"></button>` : '');
+  const retry = n.querySelector('#btnFailRetry');
+  retry.textContent = t('prog.retry');
+  retry.addEventListener('click', () => {
+    n.remove();
+    if (isAsr) runTranscribe(); else translateAll({ retry: true });
+  });
+  const tr = n.querySelector('#btnFailTranslate');
+  if (tr) {
+    tr.textContent = t('prog.doTranslate');
+    tr.addEventListener('click', () => { n.remove(); translateAll({ retry: true }); });
+  }
+}
+
 function hideProgress() {
   clearTimeout(hideTimer);
   hideTimer = setTimeout(() => {
@@ -2838,7 +3841,29 @@ function hideProgress() {
   }, 700);
 }
 
-function resetProgress() { hideProgress(); }
+/** 取消当前真实任务：作废识别代号 / 中止翻译请求；已产生的字幕保留。 */
+function cancelCurrentJob() {
+  if (!S.busy) return;
+  if (S.busy === 'asr') {
+    S.asrRun++;
+    ASR.cancel();
+  } else if (S.busy === 'mt' && S.transAbort) {
+    S.transAbort.abort();
+  }
+  toast(t('prog.cancelledHint'));
+}
+
+function retryLastJob() {
+  if (!S.lastFail) return;
+  if (S.lastFail.kind === 'asr') runTranscribe();
+  else translateAll({ retry: true });
+}
+
+function resetProgress() {
+  S.lastFail = null;
+  $('#failNote')?.remove();
+  hideProgress();
+}
 
 /* ============================ Service Worker ============================ */
 
@@ -2935,11 +3960,27 @@ async function clearCaches() {
 
 function onKeyDown(e) {
   const tag = (e.target.tagName || '').toLowerCase();
-  if (tag === 'input' || tag === 'select' || tag === 'textarea') {
-    if (e.key === 'Escape') e.target.blur();
+  // 空格在聚焦按钮上默认会「激活按钮」。精读时它应始终是播放/暂停，
+  // 否则点过某个按钮之后空格就不管用了。
+  if (e.code === 'Space' && !e.metaKey && !e.ctrlKey && !e.altKey
+      && !['input', 'select', 'textarea'].includes(tag)) {
+    e.preventDefault();
+    togglePlay();
     return;
   }
-  if (e.key === 'Escape') { closeWordCard(); closeDrawers(); return; }
+  if (e.target.isContentEditable) return;
+  if (tag === 'input' || tag === 'select' || tag === 'textarea') {
+    if (e.key === 'Escape') {
+      if (!$('#urlOverlay').hidden) { e.preventDefault(); closeUrlImport(); return; }
+      e.target.blur();
+    }
+    return;
+  }
+  if (e.key === 'Escape') {
+    if (!$('#urlOverlay').hidden) { e.preventDefault(); closeUrlImport(); return; }
+    if (!$('#continuePop').hidden) { e.preventDefault(); closeContinuePop(); return; }
+    closeWordCard(); closeDrawers(); return;
+  }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
 
   switch (e.key.toLowerCase()) {
@@ -2964,6 +4005,373 @@ function onKeyDown(e) {
       break;
     }
     default: break;
+  }
+}
+
+/* ============================ 链接导入 ============================ */
+/* 浏览器直连 YouTube / 哔哩哔哩 会被同源策略和签名校验拦住，所以取流交给本机的
+   Node 服务（server.js 里的 /api/url/*），拿到 Blob 后转成 File 交给 openVideoFile，
+   后面整条识别 / 翻译 / 跟读流程和本地选文件完全一致。
+   静态部署（没跑 server.js）时 /api/url/health 返回网页而非 JSON，这里自动降级成提示。 */
+
+const URL_API = '/api/url/';
+// 本地取流助手（桌面版）固定端口；网页版跨域去敲它，敲到哪个算哪个
+const HELPER_PORT = 9871;
+const HELPER_TRIES = 10;
+
+// 站点根：桌面版把站点铺在 /，网页版铺在 /app/ 下，静态托管也可能铺在根
+function siteRoot() {
+  const p = location.pathname;
+  const i = p.indexOf('/app/');
+  if (i >= 0) return location.origin + p.slice(0, i) + '/';
+  return location.href.replace(/[^/]*$/, '');
+}
+// 没装助手时给的下载地址：跟着站点走，换域名也不用改代码
+const HELPER_DOWNLOAD = siteRoot() + 'download/helper/';
+const UL = {
+  ready: null,     // null 未探测 / true 可用 / false 不可用
+  base: '',        // '' = 同源；否则是 http://127.0.0.1:87xx
+  helper: false,   // 是否走的本机助手
+  why: '',
+  info: null,      // inspect 结果
+  mode: 'video',   // 自动决定的取流方式：video / subtitle
+  drm: false,      // 付费 / DRM 内容，官方不给流
+  subLangs: [],    // 要抓的字幕语言
+  timer: 0,
+  busy: false,
+};
+
+const apiUrl = (path) => (UL.base || '') + URL_API + path;
+// 助手返回的媒体地址是 /api/url/... 这种绝对路径，跨域时要补上 base
+const absUrl = (u) => (UL.base && u && u.charAt(0) === '/' ? UL.base + u : u);
+
+async function apiGet(path) {
+  const r = await fetch(apiUrl(path), { cache: 'no-store' });
+  const ct = r.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) throw new Error(t('url.needLocal'));
+  const data = await r.json();
+  if (!r.ok || data.ok === false) throw apiError(data);
+  return data;
+}
+
+/** 后端已经把人话写好了，这里只把 code 一起带出来给界面判断 */
+function apiError(data) {
+  const err = new Error(data && data.error ? data.error : t('url.fail'));
+  err.code = (data && data.code) || '';
+  return err;
+}
+
+async function apiPost(path, body) {
+  const r = await fetch(apiUrl(path), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const ct = r.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) throw new Error(t('url.needLocal'));
+  const data = await r.json();
+  if (!r.ok || data.ok === false) throw apiError(data);
+  return data;
+}
+
+async function probeHealth(base) {
+  try {
+    const r = await fetch(base + URL_API + 'health', { cache: 'no-store' });
+    const ct = r.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) return null;
+    const data = await r.json();
+    return data && typeof data.ok === 'boolean' ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+async function probeUrl() {
+  if (UL.ready !== null) return UL.ready;
+
+  // 1) 同源：自己开着 server.js（本地开发 / 自建）
+  let data = await probeHealth('');
+  let base = '';
+
+  // 2) 本机助手：装了桌面版并打开着，网页版直接跨域用它的取流能力
+  if (!data || !data.ok) {
+    for (let i = 0; i < HELPER_TRIES; i++) {
+      const b = `http://127.0.0.1:${HELPER_PORT + i}`;
+      const d = await probeHealth(b);
+      if (d && d.ok) { data = d; base = b; break; }
+    }
+  }
+
+  if (data && data.ok) {
+    UL.ready = true;
+    UL.base = base;
+    UL.helper = Boolean(base);
+    UL.why = '';
+  } else {
+    UL.ready = false;
+    UL.base = '';
+    UL.helper = false;
+    UL.why = (data && data.reason) || t('url.needLocal');
+  }
+  return UL.ready;
+}
+
+function setUrlBusy(on) {
+  UL.busy = on;
+  const go = $('#urlGo');
+  if (go) go.disabled = on || !UL.info;
+  const lk = $('#urlLookup');
+  if (lk) lk.disabled = on;
+}
+
+async function openUrlImport() {
+  $('#urlOverlay').hidden = false;
+  $('#btnUrlImport').setAttribute('aria-expanded', 'true');
+  const pop = $('#urlPop');
+  pop.classList.remove('in');
+  void pop.offsetWidth;
+  pop.classList.add('in');
+  setUrlBusy(false);
+  resetUrlLookup();
+  setText('urlNote', t('url.probing'));
+  const ok = await probeUrl();
+  $('#urlLookup').disabled = !ok;
+  setText('urlNote', urlHint());
+  syncHelperLink();
+  setTimeout(() => $('#urlField').focus(), 60);
+}
+
+function stopUrlPoll() {
+  if (UL.timer) { clearInterval(UL.timer); UL.timer = 0; }
+}
+
+function closeUrlImport() {
+  stopUrlPoll();
+  $('#urlOverlay').hidden = true;
+  $('#btnUrlImport').setAttribute('aria-expanded', 'false');
+  setUrlBusy(false);
+}
+
+// 底部提示文案：本机接口不可用时始终显示原因，不被普通提示覆盖
+function urlHint() {
+  return UL.ready === false ? (UL.why || t('url.needLocal')) : t('url.note');
+}
+
+// 链接改动后丢掉上一次的解析结果，避免拿旧卡片去导入旧视频
+/** 没装助手时，把「下载取流助手」露出来 */
+function syncHelperLink() {
+  const a = $('#urlGetHelper');
+  if (!a) return;
+  const need = UL.ready === false;
+  a.hidden = !need;
+  if (need) a.href = HELPER_DOWNLOAD;
+}
+
+function resetUrlLookup() {
+  if (UL.info) {
+    UL.info = null;
+    UL.subLangs = [];
+    $('#urlCard').hidden = true;
+  }
+  $('#urlProgress').hidden = true;
+  $('#urlGo').disabled = true;
+  setText('urlNote', urlHint());
+  syncHelperLink();
+}
+
+function renderUrlInfo(info) {
+  UL.info = info;
+  const card = $('#urlCard');
+  card.hidden = false;
+  const thumb = $('#urlThumb');
+  if (info.thumbnail) { thumb.src = info.thumbnail; thumb.hidden = false; }
+  else { thumb.removeAttribute('src'); thumb.hidden = true; }
+  setText('urlName', info.title || t('url.untitled'));
+  const bits = [];
+  if (info.uploader) bits.push(info.uploader);
+  if (info.duration) bits.push(fmtTime(info.duration));
+  bits.push(info.site === 'bilibili' ? '哔哩哔哩' : 'YouTube');
+  setText('urlBy', bits.join(' · '));
+
+  const subOnly = info.subOnly === true;   // 连字幕表都被拦住，只能试着抓一次
+  const noMedia = info.mediaAvailable === false;
+  // 不让用户选：有画面就「画面 + 声音」整段取回来，取不到就自动退成字幕
+  UL.mode = (noMedia || subOnly) ? 'subtitle' : 'video';
+  UL.drm = info.drm === true;
+  const badge = $('#urlSubBadge');
+  if (info.hasSubtitle || subOnly) {
+    badge.hidden = false;
+    badge.textContent = subOnly ? t('url.subTry') : t('url.hasSub', { lang: info.bestSubLang || '' });
+  } else {
+    badge.hidden = true;
+  }
+  $('#urlGo').disabled = false;
+  setText('urlNote',
+    subOnly ? t('url.subTryNote')
+      : noMedia ? (UL.drm ? t('url.drmNote') : t('url.subOnly'))
+        : info.hasSubtitle ? t('url.noteSub') : t('url.noteNoSub'));
+}
+
+async function lookupUrl() {
+  if (UL.busy) return;
+  const raw = ($('#urlField').value || '').trim();
+  if (!raw) { setText('urlNote', t('url.needUrl')); $('#urlField').focus(); return; }
+  setUrlBusy(true);
+  $('#urlCard').hidden = true;
+  $('#urlProgress').hidden = true;
+  setText('urlNote', t('url.looking'));
+  try {
+    const info = await apiPost('inspect', { url: raw });
+    UL.subLangs = info.bestSubLang ? [info.bestSubLang] : [];
+    renderUrlInfo(info);
+  } catch (e) {
+    UL.info = null;
+    $('#urlGo').disabled = true;
+    const fromApi = Object.prototype.hasOwnProperty.call(e, 'code');
+    const msg = fromApi ? e.message : t('url.lookupFail', { msg: e.message });
+    setText('urlNote', msg);
+    toast(msg, 5200);
+  } finally {
+    setUrlBusy(false);
+  }
+}
+
+const URL_STAGE_KEY = {
+  prepare: 'url.stagePrepare',
+  download: 'url.stageDownload',
+  merge: 'url.stageMerge',
+  subs: 'url.stageSubs',
+  done: 'url.stageDone',
+};
+
+function paintProgress(job) {
+  const pct = Math.max(0, Math.min(100, job.pct || 0));
+  $('#urlProgress').hidden = false;
+  $('#urlBar').style.width = pct + '%';
+  const stageKey = URL_STAGE_KEY[job.stage];
+  let label = stageKey ? t(stageKey) : (job.detail || '');
+  if (job.state === 'running' && job.pct > 0 && job.pct < 100) {
+    label += ' ' + Math.round(job.pct) + '%';
+    if (job.speed) label += ' · ' + job.speed;
+    if (job.eta) label += ' · ' + t('url.left', { t: job.eta });
+  } else if (job.detail && job.stage !== 'prepare' && job.state === 'running') {
+    label = job.detail;
+  }
+  setText('urlStage', label);
+}
+
+async function startUrlImport() {
+  if (!LIC_ON && !needLicense()) return;
+  if (UL.busy || !UL.info) return;
+  const mode = UL.mode || 'video';
+
+  setUrlBusy(true);
+  $('#urlProgress').hidden = false;
+  $('#urlBar').style.width = '0%';
+  setText('urlStage', t('url.stagePrepare'));
+  const go = $('#urlGo');
+  go.textContent = t('url.working');
+
+  let job;
+  try {
+    job = await apiPost('open', {
+      url: UL.info.url,
+      mode,
+      subLangs: UL.subLangs.join(','),
+      title: UL.info.title,
+    });
+  } catch (e) {
+    setText('urlStage', e.message);
+    setText('urlNote', e.message);
+    go.textContent = t('url.go');
+    setUrlBusy(false);
+    return;
+  }
+
+  stopUrlPoll();
+  UL.timer = setInterval(async () => {
+    let cur;
+    try {
+      cur = await apiGet('job/' + encodeURIComponent(job.jobId));
+    } catch (e) {
+      stopUrlPoll();
+      setText('urlStage', e.message);
+      go.textContent = t('url.go');
+      setUrlBusy(false);
+      return;
+    }
+    paintProgress(cur);
+    if (cur.state === 'running') return;
+    stopUrlPoll();
+    if (cur.state === 'error') {
+      setText('urlStage', cur.error || t('url.fail'));
+      setText('urlNote', cur.error || t('url.fail'));
+      go.textContent = t('url.go');
+      setUrlBusy(false);
+      return;
+    }
+    go.textContent = t('url.go');
+    setUrlBusy(false);
+    await finishUrlImport(cur.result, mode, cur.degraded);
+  }, 700);
+}
+
+async function finishUrlImport(res, mode, degraded) {
+  if (!res) { setText('urlStage', t('url.fail')); return; }
+
+  // 有官方字幕就先抓下来喂给 importSubtitle，省掉一整轮语音识别
+  let subFile = null;
+  if (res.subtitleUrl) {
+    try {
+      const r = await fetch(absUrl(res.subtitleUrl), { cache: 'no-store' });
+      if (r.ok) {
+        const text = await r.text();
+        if (text && text.trim()) {
+          subFile = new File([text], res.subtitleName || 'subtitle.srt', { type: 'text/plain' });
+        }
+      }
+    } catch { /* 抓不到就退回自动识别 */ }
+  }
+
+  // 只要字幕：不动播放器，直接把字幕灌进当前画面
+  if (!res.mediaUrl || mode === 'subtitle') {
+    closeUrlImport();
+    if (UL.drm) toast(t('url.drmDegraded'), 9000);
+    else if (degraded) toast(t('url.degraded'), 9000);
+    if (subFile) { await importSubtitle(subFile); return; }
+    toast(t('url.noSubtitle'), 5200);
+    return;
+  }
+
+  setText('urlStage', t('url.stageLoad'));
+  let file;
+  try {
+    const r = await fetch(absUrl(res.mediaUrl), { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const blob = await r.blob();
+    file = new File([blob], res.mediaName || 'video.mp4', {
+      type: res.mediaType || blob.type || 'video/mp4',
+    });
+  } catch (e) {
+    setText('urlStage', t('url.loadFail', { msg: e.message }));
+    return;
+  }
+
+  closeUrlImport();
+
+  // 有现成字幕就别让 openVideoFile 顺手再跑一遍自动识别
+  const auto = S.settings.autoRun;
+  if (subFile) S.settings.autoRun = false;
+  try {
+    await openVideoFile(file);
+  } finally {
+    S.settings.autoRun = auto;
+  }
+  if (subFile) {
+    await importSubtitle(subFile);
+    toast(t('url.doneSub'), 3600);
+  } else {
+    toast(t('url.done'), 3600);
   }
 }
 
