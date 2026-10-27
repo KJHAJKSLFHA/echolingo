@@ -1,0 +1,12 @@
+# Netlify 构建配置
+# 站点是纯静态托管（.deploy 目录由 desktop/.tools/deploy.sh 拼装后 --dir 上传），
+# 这里只声明函数目录与依赖打包方式，不参与前端构建。
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  external_node_modules = []
+
+[functions.activate]
+  # 激活码核销：一个码只能用一次，账本在 Netlify Blobs
+  path = "/api/license/activate"

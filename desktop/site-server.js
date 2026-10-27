@@ -22,6 +22,12 @@ for (const p of ['../url-import.js', '../../url-import.js', './url-import.js']) 
   try { ({ handleUrlApi } = require(p)); break; } catch { /* 换下一个位置 */ }
 }
 
+// 激活核销（/api/license/*）。桌面版没有 Netlify，用同一份判定 + 本地账本。
+let handleLicenseApi = null;
+for (const p of ['../netlify/functions/local-license.js', '../../netlify/functions/local-license.js']) {
+  try { ({ handleLicenseApi } = require(p)); break; } catch { /* 换下一个位置 */ }
+}
+
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -69,6 +75,11 @@ function createSiteServer(root) {
         apiPath = decodeURIComponent(new URL(req.url, 'http://127.0.0.1').pathname || '/');
       } catch { /* 交给接口回 404 */ }
       if (handleUrlApi(req, res, apiPath)) return;
+    }
+
+    // 激活核销同样要收 POST，也在 405 之前
+    if (handleLicenseApi && req.url && req.url.split('?')[0].startsWith('/api/license/')) {
+      if (handleLicenseApi(req, res, ROOT)) return;
     }
 
     if (req.method !== 'GET' && req.method !== 'HEAD') {

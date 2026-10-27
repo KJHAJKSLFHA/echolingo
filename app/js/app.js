@@ -20,7 +20,7 @@ import * as EXT from './url-ext.js';
 
 // 与 index.html 里的 window.__ECHOLINGO_VER__ 必须保持一致。
 // 改这两个值时请一起改（sw.js 的 VERSION 也顺手升一级）。
-export const APP_VER = '3.18.3';
+export const APP_VER = '3.18.4';
 
 /* ============================ 状态 ============================ */
 
@@ -136,6 +136,57 @@ function formatCode(raw) {
   return s.replace(/(.{4})/g, '$1-').replace(/-$/, '');
 }
 
+/* 激活核销：一个码只能用一次，必须由服务端记账。
+ *
+ * 为什么要联网一次：app/js/license.js 是纯本地 HMAC 校验，客户端自己就算得出签名，
+ * 光靠它同一个码能被无限次重复激活。所以「首次激活」这件事交给服务端判重
+ * （线上是 Netlify Function，本地是 server.js 同一份判定逻辑），
+ * 服务端说 ok 之后，才把码存进本机 —— 之后照旧离线可用，不再联网。
+ *
+ * 没有服务端的静态镜像（GitHub Pages）会返回 HTML 而不是 JSON，
+ * 这里统一当作「连不上」，不做离线放行：否则换个镜像域名就能绕过单次限制。
+ */
+// 走线上那唯一一份账本。为什么不优先用同源：
+// GitHub Pages 镜像根本没有服务端，桌面版和本地服务器的账本又各存一份，
+// 那样「一个码只能用一次」就变成「每台机器一次」。统一指向线上才不会放假。
+// 本地调试要改指向时，在控制台设 localStorage['echolingo.license.api']。
+const LICENSE_API_PROD = 'https://echolingo-web.netlify.app/api/license/activate';
+
+function licenseApi() {
+  try {
+    const o = localStorage.getItem('echolingo.license.api');
+    if (o) return o;
+  } catch (e) { /* 无痕模式下读不到，走默认 */ }
+  return LICENSE_API_PROD;
+}
+
+async function redeemCode(code) {
+  let r;
+  try {
+    r = await fetch(licenseApi(), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code }),
+      cache: 'no-store',
+    });
+  } catch (e) {
+    return { ok: false, reason: 'offline' };
+  }
+  if (!r.ok) return { ok: false, reason: 'offline' };
+  let data;
+  try { data = await r.json(); } catch (e) { return { ok: false, reason: 'offline' }; }
+  if (data && data.ok) return { ok: true, serial: data.serial };
+  return { ok: false, reason: (data && data.reason) || 'invalid' };
+}
+
+function gateReasonText(reason) {
+  if (reason === 'used') return t('gate.used');
+  if (reason === 'unissued') return t('gate.unissued');
+  if (reason === 'offline') return t('gate.offline');
+  if (reason === 'storage') return t('gate.storage');
+  return t('gate.invalid');
+}
+
 function initLicense() {
   LIC_ON = licenseOk();
   if (LIC_ON) { closeGate(); return; }
@@ -152,7 +203,8 @@ function initLicense() {
     note.classList.toggle('ok', cls === 'ok');
   };
 
-  const submit = () => {
+  const submit = async () => {
+    if (go.disabled) return;
     const code = formatCode(box.value);
     if (!code || code.replace(/-/g, '').length < 20) {
       box.setAttribute('aria-invalid', 'true');
@@ -162,8 +214,20 @@ function initLicense() {
     go.disabled = true;
     const label = go.textContent;
     go.textContent = t('gate.activating');
-    const r = window.ECLicense ? ECLicense.activate(code) : { ok: false, reason: 'invalid' };
+    say(t('gate.activating'), '');
+
+    const r = await redeemCode(code);
     if (r.ok) {
+      // 服务端已核销，这里只负责把码留在本机，之后完全离线可用
+      const saved = window.ECLicense ? ECLicense.activate(code) : { ok: false, reason: 'invalid' };
+      if (!saved.ok) {
+        // 极小概率：码合法但本机存不了（无痕/禁用存储）。别装作成功。
+        go.disabled = false;
+        go.textContent = label;
+        box.setAttribute('aria-invalid', 'true');
+        say(gateReasonText(saved.reason), 'bad');
+        return;
+      }
       LIC_ON = true;
       box.removeAttribute('aria-invalid');
       say(t('gate.ok'), 'ok');
@@ -175,10 +239,11 @@ function initLicense() {
       }, 420);
       return;
     }
+
     go.disabled = false;
     go.textContent = label;
     box.setAttribute('aria-invalid', 'true');
-    say(r.reason === 'storage' ? t('gate.storage') : t('gate.invalid'), 'bad');
+    say(gateReasonText(r.reason), 'bad');
   };
 
   // 弹窗自己的语言切换：客户扫完码看不懂中文，就地换语言

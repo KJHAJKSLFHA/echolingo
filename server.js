@@ -16,6 +16,7 @@ const path = require('path');
 const url = require('url');
 
 const { handleUrlApi } = require('./url-import.js');
+const { handleLicenseApi } = require('./netlify/functions/local-license.js');
 
 const ROOT = __dirname;
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -52,6 +53,11 @@ const IMMUTABLE = /\.(onnx|wasm|spm|bin|m4a|mp3|mp4|webm|wav)$/i;
 
 function createAppServer() {
   return http.createServer((req, res) => {
+  // 激活核销也要收 POST，同样放在 405 检查之前。
+  if (req.url && req.url.startsWith('/api/license/')) {
+    if (handleLicenseApi(req, res, ROOT)) return;
+  }
+
   // 链接导入接口要收 POST，所以必须在下面的 405 检查之前分流。
   if (req.url && req.url.startsWith('/api/url/')) {
     let apiPath = '/';
