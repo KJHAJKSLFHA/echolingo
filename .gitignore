@@ -71,3 +71,11 @@ ext/_metadata/
 
 # 本地运行产物（激活核销账本等，绝不入库）
 .local/
+
+# 激活码签发材料：私钥、批次码表、核销记录绝不入库
+licgen/private.pem
+licgen/public.pem
+licgen/public.b64
+licgen/batch-*.txt
+licgen/batch-*.csv
+licgen/issued.csv
