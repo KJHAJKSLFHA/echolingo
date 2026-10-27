@@ -29,7 +29,13 @@ export function reply(status, body) {
 export async function handleActivate(input, ledger) {
   const method = String(input.method || 'GET').toUpperCase();
 
-  if (method === 'OPTIONS') return new Response('', { status: 204, headers: JSON_HEAD });
+  // 204 不能带 body：Netlify 运行时对 new Response('', {status:204}) 直接抛
+  // TypeError: Invalid response status code 204（实测 502），必须传 null，
+  // 且不要带 content-type，否则 CORS 预检会整条失败。
+  if (method === 'OPTIONS') {
+    const { 'content-type': _drop, ...corsHead } = JSON_HEAD;
+    return new Response(null, { status: 204, headers: corsHead });
+  }
   if (method === 'GET') {
     // 健康检查：只报「服务在」和「发了多少个码」，不泄露清单内容
     return reply(200, { ok: true, service: 'echolingo-license', issued: ISSUED.size, 'single-use': true });
