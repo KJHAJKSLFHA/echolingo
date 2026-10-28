@@ -28,6 +28,12 @@ for (const p of ['../netlify/functions/local-license.js', '../../netlify/functio
   try { ({ handleLicenseApi } = require(p)); break; } catch { /* 换下一个位置 */ }
 }
 
+// 账号与每日配额（/api/account）。桌面版离线可用，这里只是让本地也能跑通账号流程。
+let handleAccountApi = null;
+for (const p of ['../netlify/functions/local-account.js', '../../netlify/functions/local-account.js']) {
+  try { ({ handleAccountApi } = require(p)); break; } catch { /* 换下一个位置 */ }
+}
+
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -80,6 +86,11 @@ function createSiteServer(root) {
     // 激活核销同样要收 POST，也在 405 之前
     if (handleLicenseApi && req.url && req.url.split('?')[0].startsWith('/api/license/')) {
       if (handleLicenseApi(req, res, ROOT)) return;
+    }
+
+    // 账号与每日配额，同样在 405 之前
+    if (handleAccountApi && req.url && req.url.split('?')[0].startsWith('/api/account')) {
+      if (handleAccountApi(req, res, ROOT)) return;
     }
 
     if (req.method !== 'GET' && req.method !== 'HEAD') {

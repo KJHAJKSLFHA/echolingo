@@ -17,10 +17,11 @@ import * as ASR from './asr.js';
 import * as MT from './mt.js';
 import * as SRS from './srs.js';
 import * as EXT from './url-ext.js';
+import * as ACCT from './account.js';
 
 // 与 index.html 里的 window.__ECHOLINGO_VER__ 必须保持一致。
 // 改这两个值时请一起改（sw.js 的 VERSION 也顺手升一级）。
-export const APP_VER = '3.18.4';
+export const APP_VER = '3.19.0';
 
 /* ============================ 状态 ============================ */
 
@@ -108,11 +109,32 @@ function licenseOk() {
   try { return !!(window.ECLicense && ECLicense.state().active); } catch (e) { return false; }
 }
 
-/** 未激活时挡住功能并弹出激活窗；返回是否已激活 */
+/* 网页版和桌面版的授权形态不同：
+ *   桌面版（Electron）可能没网，沿用离线激活码，一次激活永久可用；
+ *   网页版走账号，每天免费两小时，绑了激活码就永久。
+ * gateOk() 是唯一判据，所有功能入口都问它。 */
+const IS_DESKTOP = /Electron/i.test(navigator.userAgent || '');
+
+function gateOk() {
+  if (IS_DESKTOP) return licenseOk();
+  return ACCT.canUse();
+}
+
+/** 够用时返回 true；不够就弹出对应的窗（激活窗 / 登录窗 / 额度用完窗）并返回 false */
 function needLicense() {
-  if (licenseOk()) return true;
-  openGate();
-  toast(t('gate.need'));
+  if (gateOk()) return true;
+  if (IS_DESKTOP) {
+    openGate();
+    toast(t('gate.need'));
+    return false;
+  }
+  if (!ACCT.isLoggedIn()) {
+    openAcct('login');
+    toast(t('acct.needLogin'));
+    return false;
+  }
+  openAcct('limit');
+  toast(t('acct.limitToast'));
   return false;
 }
 
@@ -281,10 +303,272 @@ function initLicense() {
 }
 
 
+/* ============================ 账号（网页版） ============================ */
+/* 网页版不用激活码当门槛，改成「登录 + 每天两小时免费，绑码永久」。
+ * 桌面版不受影响（见 gateOk 的分流）。 */
+
+let acctPane = 'login';
+let acctWarned = false;
+
+function acctNote(text, cls) {
+  const n = $('#acctNote');
+  if (!n) return;
+  n.textContent = text || '';
+  n.classList.toggle('bad', cls === 'bad');
+  n.classList.toggle('ok', cls === 'ok');
+}
+
+function showAcctPane(pane) {
+  acctPane = pane;
+  $$('#acctOverlay [data-acct-pane]').forEach((p) => { p.hidden = p.dataset.acctPane !== pane; });
+  const title = $('#acctTitle');
+  const sub = $('#acctSub');
+  if (title) title.textContent = t('acct.title.' + pane);
+  if (sub) sub.textContent = t('acct.sub.' + pane);
+  acctNote('');
+}
+
+function openAcct(pane) {
+  const o = $('#acctOverlay');
+  if (!o) return;
+  o.hidden = false;
+  o.setAttribute('aria-hidden', 'false');
+  showAcctPane(pane || (ACCT.isLoggedIn() ? 'account' : 'login'));
+  paintAcct();
+  const first = $('#acctOverlay [data-acct-pane]:not([hidden]) input');
+  if (first) setTimeout(() => { try { first.focus(); } catch (e) {} }, 80);
+}
+
+function closeAcct() {
+  const o = $('#acctOverlay');
+  if (o) { o.hidden = true; o.setAttribute('aria-hidden', 'true'); }
+}
+
+/** 顶栏配额指示 + 账号面板文字 */
+function paintAcct() {
+  const u = ACCT.ACCT.user;
+  const pill = $('#acctPill');
+  const txt = $('#acctPillText');
+  if (pill && txt) {
+    pill.hidden = false;
+    pill.classList.toggle('pro', !!(u && u.unlimited));
+    if (!u) txt.textContent = t('acct.pillLogin');
+    else if (u.unlimited) txt.textContent = t('acct.pillPro');
+    else txt.textContent = t('acct.pillLeft').replace('{left}', ACCT.fmtRemain(u.remaining));
+    pill.title = u ? u.email : t('acct.pillLogin');
+  }
+  const who = $('#acctWho');
+  if (who) who.textContent = u ? u.email : '';
+  const status = $('#acctStatus');
+  if (status) {
+    if (!u) status.textContent = '';
+    else if (u.unlimited) status.textContent = t('acct.statusPro').replace('{serial}', u.serial || '—');
+    else status.textContent = t('acct.statusFree')
+      .replace('{left}', ACCT.fmtRemain(u.remaining))
+      .replace('{used}', String(Math.round((u.usedToday || 0) / 60)));
+  }
+  const up = $('#acctUpgrade');
+  if (up) up.hidden = !!(u && u.unlimited);
+  const contact = $('#acctContact');
+  if (contact) contact.textContent = t('gate.contact').replace('{wx}', SELLER_WX);
+  const later = $('#acctLater');
+  if (later) later.hidden = !ACCT.isLoggedIn();
+  const redeemed = $('#acctGoRedeem');
+  if (redeemed && u && u.unlimited) redeemed.hidden = true;
+}
+
+function reasonText(r) {
+  if (r === 'exists') return t('acct.err.exists');
+  if (r === 'no-user') return t('acct.err.noUser');
+  if (r === 'bad-pass') return t('acct.err.badPass');
+  if (r === 'bad-email') return t('acct.err.badEmail');
+  if (r === 'weak-pass') return t('acct.err.weakPass');
+  if (r === 'need-login') return t('acct.err.needLogin');
+  if (r === 'used') return t('gate.used');
+  if (r === 'unissued') return t('gate.unissued');
+  if (r === 'offline') return t('acct.err.offline');
+  return t('gate.invalid');
+}
+
+function formatAcctCode(raw) {
+  const s = String(raw || '').toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 20);
+  return s.replace(/(.{4})/g, '$1-').replace(/-$/, '');
+}
+
+function bindAcctUI() {
+  const o = $('#acctOverlay');
+  if (!o) return;
+
+  $('#acctPill')?.addEventListener('click', () => {
+    if (ACCT.isLoggedIn() && ACCT.canUse()) openAcct('account');
+    else if (ACCT.isLoggedIn()) openAcct('limit');
+    else openAcct('login');
+  });
+
+  // 三语切换（和激活窗同一套做法：客户就地换语言）
+  const langs = $$('#acctOverlay [data-acct-lang]');
+  const paintLang = () => {
+    langs.forEach((b) => b.classList.toggle('active', b.dataset.acctLang === getLang()));
+    showAcctPane(acctPane);
+    paintAcct();
+  };
+  langs.forEach((b) => b.addEventListener('click', () => { setLang(b.dataset.acctLang); paintLang(); }));
+
+  $('#acctToReg')?.addEventListener('click', () => showAcctPane('reg'));
+  $('#acctToLogin')?.addEventListener('click', () => showAcctPane('login'));
+  $('#acctLater')?.addEventListener('click', () => closeAcct());
+
+  const busyBtn = (btn, on, text) => {
+    if (!btn) return;
+    if (on) { btn.dataset.label = btn.textContent; btn.textContent = text; btn.disabled = true; }
+    else { btn.textContent = btn.dataset.label || btn.textContent; btn.disabled = false; }
+  };
+
+  const doLogin = async () => {
+    const btn = $('#acctGoLogin');
+    if (btn && btn.disabled) return;
+    const email = ($('#acctEmail')?.value || '').trim();
+    const pass = $('#acctPass')?.value || '';
+    if (!email || !pass) { acctNote(t('acct.err.badEmail'), 'bad'); return; }
+    busyBtn(btn, true, t('acct.working'));
+    acctNote(t('acct.working'));
+    let d;
+    try { d = await ACCT.login(email, pass); } catch (e) { d = { ok: false, reason: 'offline' }; }
+    busyBtn(btn, false);
+    if (d.ok) {
+      acctNote(t('acct.okLogin'), 'ok');
+      paintAcct();
+      setTimeout(() => {
+        closeAcct();
+        toast(t('acct.okLogin'));
+      }, 320);
+    } else {
+      acctNote(reasonText(d.reason), 'bad');
+    }
+  };
+
+  const doReg = async () => {
+    const btn = $('#acctGoReg');
+    if (btn && btn.disabled) return;
+    const email = ($('#acctEmail2')?.value || '').trim();
+    const pass = $('#acctPass2')?.value || '';
+    if (!email || pass.length < 6) { acctNote(t('acct.err.weakPass'), 'bad'); return; }
+    busyBtn(btn, true, t('acct.working'));
+    acctNote(t('acct.working'));
+    let d;
+    try { d = await ACCT.register(email, pass); } catch (e) { d = { ok: false, reason: 'offline' }; }
+    busyBtn(btn, false);
+    if (d.ok) {
+      acctNote(t('acct.okReg'), 'ok');
+      paintAcct();
+      setTimeout(() => { closeAcct(); toast(t('acct.okReg')); }, 320);
+    } else {
+      acctNote(reasonText(d.reason), 'bad');
+    }
+  };
+
+  const doRedeem = async (inputSel, btnSel) => {
+    const btn = $(btnSel);
+    if (btn && btn.disabled) return;
+    if (!ACCT.isLoggedIn()) { showAcctPane('login'); return; }
+    const box = $(inputSel);
+    const code = formatAcctCode(box?.value || '');
+    if (!code || code.replace(/-/g, '').length < 20) {
+      box?.setAttribute('aria-invalid', 'true');
+      acctNote(t('gate.invalid'), 'bad');
+      return;
+    }
+    busyBtn(btn, true, t('acct.working'));
+    acctNote(t('acct.working'));
+    let d;
+    try { d = await ACCT.redeem(code); } catch (e) { d = { ok: false, reason: 'offline' }; }
+    busyBtn(btn, false);
+    if (d.ok) {
+      acctNote(t('acct.okRedeem'), 'ok');
+      paintAcct();
+      setTimeout(() => { closeAcct(); toast(t('acct.okRedeem')); }, 420);
+    } else {
+      box?.setAttribute('aria-invalid', 'true');
+      acctNote(reasonText(d.reason), 'bad');
+    }
+  };
+
+  $('#acctGoLogin')?.addEventListener('click', doLogin);
+  $('#acctGoReg')?.addEventListener('click', doReg);
+  $('#acctGoRedeem')?.addEventListener('click', () => doRedeem('#acctCode', '#acctGoRedeem'));
+  $('#acctGoRedeem2')?.addEventListener('click', () => doRedeem('#acctCode2', '#acctGoRedeem2'));
+
+  $('#acctOut')?.addEventListener('click', () => {
+    ACCT.logout();
+    paintAcct();
+    showAcctPane('login');
+    toast(t('acct.okOut'));
+  });
+
+  // 回车直接提交
+  $('#acctPass')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doLogin(); } });
+  $('#acctPass2')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doReg(); } });
+  [['#acctCode', '#acctGoRedeem'], ['#acctCode2', '#acctGoRedeem2']].forEach(([inp, btn]) => {
+    const box = $(inp);
+    if (!box) return;
+    box.addEventListener('input', () => {
+      const pos = box.selectionStart;
+      const before = box.value.length;
+      box.value = formatAcctCode(box.value);
+      const next = Math.max(0, pos + (box.value.length - before));
+      try { box.setSelectionRange(next, next); } catch (e) {}
+      box.removeAttribute('aria-invalid');
+    });
+    box.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); doRedeem(inp, btn); }
+    });
+  });
+
+  onLangChange(paintLang);
+  paintLang();
+}
+
+/* 额度变化时同步界面；用光的那一刻如果正在识别/翻译，就地停下并说明原因，
+ * 而不是让人以为还在跑。 */
+function onAcctChange() {
+  paintAcct();
+  const u = ACCT.ACCT.user;
+  if (!u) return;
+  if (!ACCT.canUse()) {
+    if (!acctWarned) {
+      acctWarned = true;
+      toast(t('acct.limitToast'));
+      try { ASR.cancel && ASR.cancel(); } catch (e) { /* 没在跑 */ }
+    }
+    if (!$('#acctOverlay')?.hidden) showAcctPane('limit');
+  } else {
+    acctWarned = false;
+  }
+}
+
+async function initAccount() {
+  if (IS_DESKTOP) { initLicense(); return; }   // 桌面版走离线激活码，逻辑原样
+  bindAcctUI();
+  window.addEventListener('acct:change', onAcctChange);
+  // 真实「在用」信号：播放器在放、识别在跑、翻译在跑。比单纯页面可见准得多，
+  // 静放着不说话就不该扣时长。
+  setInterval(() => {
+    try {
+      ACCT.markBusy('player', !!player && !player.paused && !player.ended);
+      ACCT.markBusy('asr', S.busy === 'asr');
+      ACCT.markBusy('mt', S.busy === 'mt');
+    } catch (e) { /* 页面还没就绪 */ }
+  }, 5000);
+  await ACCT.init();
+  paintAcct();
+  // 没登录、或者额度已用光，进来就挡住：不然计时没有归属，也说不清为什么不能用
+  if (!ACCT.canUse()) openAcct(ACCT.isLoggedIn() ? 'limit' : 'login');
+}
+
 async function boot() {
   initLang();
   loadSettings();
-  initLicense();
+  await initAccount();
   applyTheme();
   S.recent = loadRecent();
   TTS.initTTS();
@@ -2083,7 +2367,7 @@ async function openViaPicker() {
 }
 
 async function openVideoFile(file, opts = {}) {
-  if (!LIC_ON && !needLicense()) return;
+  if (!needLicense()) return;
   // 换了素材：作废正在进行的识别与翻译，避免旧结果写进新视频
   S.asrRun++;
   ASR.cancel();
@@ -3745,7 +4029,7 @@ async function retryGaps(file) {
 }
 
 async function runTranscribe() {
-  if (!LIC_ON && !needLicense()) return;
+  if (!needLicense()) return;
   const file = S.file;
   if (!file) { toast(t('toast.needFile')); return; }
 
@@ -4533,7 +4817,7 @@ function paintProgress(job) {
 }
 
 async function startUrlImport() {
-  if (!LIC_ON && !needLicense()) return;
+  if (!needLicense()) return;
   if (UL.busy || !UL.info) return;
   const mode = UL.mode || 'video';
 

@@ -16,7 +16,7 @@
 <script>
 // 版本标记：app.js 会比对它，一旦发现 HTML 与 JS 来自不同版本就重新加载。
 // 这是「Service Worker 缓存了新版 JS 却给了旧 HTML」这类混搭的兜底保险。
-window.__ECHOLINGO_VER__ = '3.18.4';
+window.__ECHOLINGO_VER__ = '3.19.0';
 </script>
 <script>
 // 在首屏绘制前定好主题，避免出现"白闪一下再变黑"
@@ -97,6 +97,13 @@ try {
         data-i18n-title="url.openTitle">
         <svg viewBox="0 0 24 24" class="ico" aria-hidden="true"><path d="M10.5 13.5a4 4 0 005.7 0l2.6-2.6a4 4 0 10-5.7-5.7l-1.2 1.2"/><path d="M13.5 10.5a4 4 0 00-5.7 0l-2.6 2.6a4 4 0 105.7 5.7l1.2-1.2"/></svg>
         <span data-i18n="url.label">链接导入</span>
+      </button>
+
+      <!-- 账号与今日免费额度。永久会员显示「永久」，免费用户显示倒计时。 -->
+      <button class="btn acct-pill" id="acctPill" type="button" hidden
+        aria-haspopup="dialog" aria-expanded="false" aria-controls="acctOverlay">
+        <svg viewBox="0 0 24 24" class="ico" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5"/><path d="M4.5 20c1.6-3.6 4.3-5.2 7.5-5.2s5.9 1.6 7.5 5.2"/></svg>
+        <span id="acctPillText">登录</span>
       </button>
 
       <label class="btn btn-icon" for="fileSub" data-i18n-title="top.importSub" title="导入字幕">
@@ -635,12 +642,93 @@ try {
     </div>
   </div>
 
+
+  <!-- 账号登录 / 每日免费额度 / 绑码升级永久。
+       网页版走账号（每天两小时），桌面版仍走离线激活码，两者共用这一层弹窗。 -->
+  <div class="gate acct" id="acctOverlay" hidden>
+    <div class="gate-card acct-card" role="dialog" aria-modal="true" aria-labelledby="acctTitle">
+      <div class="gate-head">
+        <span class="gate-logo">EL</span>
+        <div class="gate-head-main">
+          <h2 id="acctTitle" data-i18n="acct.title.login">登录后开始学习</h2>
+          <p id="acctSub" data-i18n="acct.sub.login">每天免费 2 小时。想长期用，登录后绑一张激活码就永久。</p>
+        </div>
+        <div class="seg gate-langs" role="group" aria-label="语言 / Language / Idioma">
+          <button type="button" data-acct-lang="zh">中文</button>
+          <button type="button" data-acct-lang="en">EN</button>
+          <button type="button" data-acct-lang="es">ES</button>
+        </div>
+      </div>
+
+      <div class="gate-body acct-body">
+        <!-- 登录 -->
+        <div class="acct-pane" data-acct-pane="login">
+          <label class="gate-label" for="acctEmail" data-i18n="acct.email">邮箱</label>
+          <input id="acctEmail" class="gate-input" type="email" inputmode="email"
+            autocomplete="username" spellcheck="false" placeholder="you@example.com">
+          <label class="gate-label" for="acctPass" data-i18n="acct.pass">密码</label>
+          <input id="acctPass" class="gate-input" type="password"
+            autocomplete="current-password" placeholder="••••••">
+          <button class="btn btn-primary gate-go" id="acctGoLogin" type="button" data-i18n="acct.login">登录</button>
+          <button class="acct-link" id="acctToReg" type="button" data-i18n="acct.toReg">没有账号？注册一个</button>
+        </div>
+
+        <!-- 注册 -->
+        <div class="acct-pane" data-acct-pane="reg" hidden>
+          <label class="gate-label" for="acctEmail2" data-i18n="acct.email">邮箱</label>
+          <input id="acctEmail2" class="gate-input" type="email" inputmode="email"
+            autocomplete="username" spellcheck="false" placeholder="you@example.com">
+          <label class="gate-label" for="acctPass2" data-i18n="acct.passNew">密码（至少 6 位）</label>
+          <input id="acctPass2" class="gate-input" type="password"
+            autocomplete="new-password" placeholder="••••••">
+          <button class="btn btn-primary gate-go" id="acctGoReg" type="button" data-i18n="acct.reg">注册并登录</button>
+          <button class="acct-link" id="acctToLogin" type="button" data-i18n="acct.toLogin">已有账号？直接登录</button>
+        </div>
+
+        <!-- 今日额度用完 -->
+        <div class="acct-pane" data-acct-pane="limit" hidden>
+          <p class="acct-lead" data-i18n="acct.limitLead">今天的两小时免费额度用完了。想接着学，用激活码解锁永久版。</p>
+          <div class="acct-buy">
+            <img class="gate-qr" src="media/activate-qr.png" alt="微信支付收款码" width="150" height="164">
+            <div class="acct-buy-main">
+              <p class="gate-price"><b>¥9.9</b><span data-i18n="gate.once">一次性 · 永久激活</span></p>
+              <p class="gate-tip" data-i18n="gate.pay1">微信扫码付款，备注里写上你的邮箱或微信号。</p>
+              <p class="gate-tip" data-i18n="gate.pay2">付款后把截图发给我，几分钟内回你激活码。</p>
+              <p class="gate-contact" id="acctContact"></p>
+            </div>
+          </div>
+          <label class="gate-label" for="acctCode" data-i18n="acct.codeLabel">已有激活码</label>
+          <input id="acctCode" class="gate-input" type="text" inputmode="latin"
+            autocomplete="off" spellcheck="false" maxlength="30" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX">
+          <button class="btn btn-primary gate-go" id="acctGoRedeem" type="button" data-i18n="acct.redeem">激活永久版</button>
+          <button class="acct-link" id="acctLater" type="button" data-i18n="acct.later">先不用，明天再来</button>
+        </div>
+
+        <!-- 账号面板 -->
+        <div class="acct-pane" data-acct-pane="account" hidden>
+          <p class="acct-lead"><span data-i18n="acct.signedAs">已登录</span> <b id="acctWho"></b></p>
+          <p class="acct-status" id="acctStatus"></p>
+          <div id="acctUpgrade">
+            <label class="gate-label" for="acctCode2" data-i18n="acct.codeLabel">已有激活码</label>
+            <input id="acctCode2" class="gate-input" type="text" inputmode="latin"
+              autocomplete="off" spellcheck="false" maxlength="30" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX">
+            <button class="btn btn-primary gate-go" id="acctGoRedeem2" type="button" data-i18n="acct.redeem">激活永久版</button>
+          </div>
+          <button class="acct-link" id="acctOut" type="button" data-i18n="acct.out">退出登录</button>
+        </div>
+      </div>
+
+      <p class="gate-note" id="acctNote" aria-live="polite"></p>
+    </div>
+  </div>
+
   <div class="scrim" id="scrim" hidden></div>
 
   <div class="toast" id="toast" hidden></div>
 </div>
 
 <script src="js/license.js"></script>
+<script type="module" src="js/account.js"></script>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

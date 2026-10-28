@@ -1261,3 +1261,47 @@ body.dragover::after {
   .gate-qr { width: 190px; }
   .gate-go { align-self: stretch; }
 }
+
+/* ============================ 账号 / 每日配额 ============================ */
+
+/* 顶栏的额度指示：免费用户显示倒计时，永久会员显示「永久」 */
+.acct-pill { gap: 6px; }
+.acct-pill #acctPillText { font-variant-numeric: tabular-nums; letter-spacing: .2px; }
+.acct-pill.pro { color: var(--accent); border-color: var(--accent); }
+
+.acct-card { max-width: 460px; }
+.acct-body { grid-template-columns: 1fr !important; gap: 0 !important; }
+.acct-pane { display: flex; flex-direction: column; }
+.acct-pane[hidden] { display: none; }
+.acct-pane .gate-label { margin-top: 12px; }
+.acct-pane .gate-label:first-child { margin-top: 0; }
+
+.acct-lead { margin: 2px 0 14px; font-size: 13.5px; line-height: 1.65; color: var(--text-2); }
+.acct-lead b { color: var(--text); font-weight: 600; }
+
+.acct-buy { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 16px; }
+.acct-buy .gate-qr { flex: none; }
+.acct-buy-main { min-width: 0; text-align: left; }
+.acct-buy-main .gate-price { justify-content: flex-start; margin-top: 0; }
+.acct-buy-main .gate-tip { text-align: left; }
+
+.acct-status {
+  margin: 4px 0 14px; padding: 10px 12px; border-radius: 10px;
+  background: var(--surface-2, rgba(127, 127, 127, .08));
+  font-size: 13px; line-height: 1.6; color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.acct-link {
+  margin-top: 12px; align-self: flex-start; padding: 4px 0;
+  background: none; border: 0; cursor: pointer;
+  font-size: 12.5px; color: var(--accent);
+}
+.acct-link:hover { text-decoration: underline; }
+
+@media (max-width: 560px) {
+  .acct-buy { flex-direction: column; align-items: center; }
+  .acct-buy-main { text-align: center; }
+  .acct-buy-main .gate-price,
+  .acct-buy-main .gate-tip { justify-content: center; text-align: center; }
+}

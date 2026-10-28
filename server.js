@@ -17,6 +17,7 @@ const url = require('url');
 
 const { handleUrlApi } = require('./url-import.js');
 const { handleLicenseApi } = require('./netlify/functions/local-license.js');
+const { handleAccountApi } = require('./netlify/functions/local-account.js');
 
 const ROOT = __dirname;
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -56,6 +57,11 @@ function createAppServer() {
   // 激活核销也要收 POST，同样放在 405 检查之前。
   if (req.url && req.url.startsWith('/api/license/')) {
     if (handleLicenseApi(req, res, ROOT)) return;
+  }
+
+  // 账号与每日配额：同样要收 POST，放在 405 检查之前。
+  if (req.url && req.url.startsWith('/api/account')) {
+    if (handleAccountApi(req, res, ROOT)) return;
   }
 
   // 链接导入接口要收 POST，所以必须在下面的 405 检查之前分流。
