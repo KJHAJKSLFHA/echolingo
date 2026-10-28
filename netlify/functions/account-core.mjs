@@ -142,6 +142,15 @@ function emailLooksOk(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) && email.length <= 160;
 }
 
+/** 当日用量归一化。
+ * 历史上有两种写法：裸数字（本地 JSON 文件）和 { sec } 对象（Blobs）。
+ * 线上曾因为只认裸数字、而 Blobs 读回对象/空值，导致每次上报都被当成 0，
+ * 配额永远停留在一次的量。两种都认，避免再踩。 */
+function secOf(v) {
+  if (v && typeof v === 'object') return Math.max(0, Math.floor(Number(v.sec) || 0));
+  return Math.max(0, Math.floor(Number(v) || 0));
+}
+
 /** 组装给前端的用户视图：不含任何口令材料 */
 function view(user, usedToday, now = Date.now()) {
   const used = Math.max(0, Math.floor(Number(usedToday) || 0));
@@ -158,6 +167,26 @@ function view(user, usedToday, now = Date.now()) {
     unlimited: pro,
     dayKey: dayKey(now),
   };
+}
+
+/** 用量前缀：d/<id>/<dayKey>/  —— 末尾的斜杠很重要，
+ * 旧的单键写法是 d/<id>/<dayKey>（无斜杠），两者不会互相误匹配。 */
+function usagePrefix(userId, now) {
+  return `d/${userId}/${dayKey(now)}/`;
+}
+
+/** 读当日已用秒数：追加日志求和 + 兼容早期单键写法 */
+async function readUsed(db, userId, now) {
+  const legacy = secOf(await db.get(`d/${userId}/${dayKey(now)}`));
+  const logged = db.sumUsage ? secOf(await db.sumUsage(usagePrefix(userId, now))) : 0;
+  return legacy + logged;
+}
+
+/** 记一笔用量 */
+async function addUsed(db, userId, now, sec) {
+  if (db.addUsage) return db.addUsage(usagePrefix(userId, now), sec);
+  if (db.incr) return db.incr(`d/${userId}/${dayKey(now)}`, sec);
+  return 0;
 }
 
 /* ------------------------------ 主入口 ------------------------------ */
@@ -239,25 +268,28 @@ export async function handleAccount(input, db, cfg) {
 
   /* ---------- 刷新状态 ---------- */
   if (op === 'me') {
-    const used = await db.get(`d/${userId}/${dayKey(now)}`);
+    const used = await readUsed(db, userId, now);
     return reply(200, { ok: true, user: view(user, used, now) });
   }
 
   /* ---------- 上报使用时长 ---------- */
   if (op === 'tick') {
     // 单次最多认 10 分钟：客户端一次报几小时也只会加一点点，压住明显作弊
-    const add = Math.max(0, Math.min(600, Math.floor(Number(body.seconds) || 0)));
+    const raw = Math.max(0, Math.min(600, Math.floor(Number(body.seconds) || 0)));
+    const used0 = await readUsed(db, userId, now);
+    // 再按当日剩余额度夹一次：用满之后不再累加，避免「已用 2:10:00」这种越界显示
+    const add = Math.min(raw, Math.max(0, FREE_SECONDS_PER_DAY - used0));
     if (!add) {
-      const used0 = await db.get(`d/${userId}/${dayKey(now)}`);
       return reply(200, { ok: true, user: view(user, used0, now) });
     }
     if (user.plan === 'pro') {
       // 永久会员不计时，但仍然记一笔，方便日后看真实用量
-      await db.incr(`d/${userId}/${dayKey(now)}`, add);
+      await addUsed(db, userId, now, add);
       return reply(200, { ok: true, user: view(user, 0, now) });
     }
-    const used = await db.incr(`d/${userId}/${dayKey(now)}`, add);
-    return reply(200, { ok: true, user: view(user, used, now) });
+    await addUsed(db, userId, now, add);
+    const used = await readUsed(db, userId, now);
+    return reply(200, { ok: true, user: view(user, Math.min(used, FREE_SECONDS_PER_DAY), now) });
   }
 
   /* ---------- 绑定激活码，升级永久 ---------- */

@@ -18,11 +18,15 @@ import LIC from '../../app/js/license.js';
 const STORE = 'acct';
 
 function blobsDb() {
-  const store = getStore(STORE);
+  // consistency 必须在**创建 store 时**声明；写在 get/list 的调用参数里不生效，
+  // 实测表现就是 list 永远只返回第一条用量键（读缓存）。
+  const store = getStore({ name: STORE, consistency: 'strong' });
   return {
     async get(key) {
       try {
-        return await store.get(key, { type: 'json' });
+        // consistency:'strong' 不能省。默认是最终一致（读缓存），
+        // 表现为刚写入的用量读回来还是旧值 —— 之前配额不累加就是它。
+        return await store.get(key, { type: 'json', consistency: 'strong' });
       } catch (e) {
         return null;
       }
@@ -41,13 +45,51 @@ function blobsDb() {
         return false;
       }
     },
-    /* Blobs 没有原子自增，这里用读-改-写。并发上报可能丢几秒（对用户有利的方向），
-     * 配额本身是「拦普通用户」的松紧带，不必为几秒上分布式锁。 */
-    async incr(key, delta) {
-      const cur = Number(await this.get(key)) || 0;
-      const next = cur + Math.max(0, Number(delta) || 0);
-      await store.setJSON(key, next);
-      return next;
+    /* 用量改成「只追加」日志。
+     *
+     * 先前用读-改-写（读旧值 → 加 → 写回）在线上大幅漏计：16 次上报只记到 2400 秒。
+     * 原因是 Blobs 跨实例读后写不保证一致，读到的常常是旧副本，增量被互相覆盖。
+     *
+     * 现在每次上报写一个**独立键**，键名第二段就是本次秒数：
+     *   d/<id>/<day>/<sec>-<rand>
+     * 统计时只 list 前缀、从键名求和，既不读值也不覆盖，
+     * 因此永远不会互相覆盖；极端情况下只是暂时少算，稍后重新 list 即可补齐。 */
+    async addUsage(prefix, sec) {
+      const n = Math.max(0, Math.floor(Number(sec) || 0));
+      if (!n) return;
+      const rand = Math.random().toString(36).slice(2, 8);
+      const key = `${prefix}${n}-${rand}`;
+      await store.setJSON(key, { sec: n });
+      return key;
+    },
+    async listKeys(prefix) {
+      const keys = [];
+      try {
+        const it = store.list({ prefix, paginate: true, consistency: 'strong' });
+        for await (const page of it) {
+          const blobs = Array.isArray(page) ? page : (page && page.blobs) || [];
+          for (const b of blobs) keys.push(String(b.key || ''));
+        }
+      } catch (e) {
+        keys.push('ERR:' + (e && e.message));
+      }
+      return keys;
+    },
+    async sumUsage(prefix) {
+      let total = 0;
+      let pages = 0;
+      const it = store.list({ prefix, paginate: true, consistency: 'strong' });
+      for await (const page of it) {
+        const blobs = Array.isArray(page) ? page : (page && page.blobs) || [];
+        for (const b of blobs) {
+          // 键名前缀之后是「秒数-随机串」，直接从键名取秒数，省掉逐条读取
+          const tail = String(b.key || '').slice(prefix.length);
+          const n = Math.floor(Number(tail.split('-')[0]) || 0);
+          if (n > 0) total += n;
+        }
+        if (++pages > 200) break; // 安全阀：单日 2 小时最多几百条
+      }
+      return total;
     },
   };
 }
